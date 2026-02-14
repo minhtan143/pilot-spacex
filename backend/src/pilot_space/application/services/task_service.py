@@ -82,7 +82,8 @@ class TaskService:
     ) -> dict[str, Any]:
         """List all tasks for an issue with progress stats."""
         tasks = await self._task_repo.list_by_issue(issue_id)
-        total, completed = await self._task_repo.count_by_issue(issue_id)
+        total = len(tasks)
+        completed = sum(1 for t in tasks if t.status == TaskStatus.DONE)
         completion_percent = (completed / total * 100) if total > 0 else 0.0
 
         return {
@@ -213,7 +214,14 @@ class TaskService:
                 raise ValueError(f"Task {tid} not found for issue {issue_id}")
 
         await self._task_repo.bulk_update_order(issue_id, task_ids)
-        return list(await self._task_repo.list_by_issue(issue_id))
+
+        # Reuse already-fetched tasks with updated sort_order
+        order_map = {tid: idx for idx, tid in enumerate(task_ids)}
+        sorted_tasks = sorted(existing, key=lambda t: order_map.get(t.id, len(task_ids)))
+        for task in sorted_tasks:
+            if task.id in order_map:
+                task.sort_order = order_map[task.id]
+        return list(sorted_tasks)
 
     async def export_context(
         self,
@@ -394,24 +402,6 @@ class TaskService:
             lines.extend(["", "## Technical Constraints", "", issue.technical_requirements])
 
         return "\n".join(lines)
-
-    async def decompose_issue(
-        self,
-        issue_id: UUID,
-        workspace_id: UUID,
-    ) -> None:
-        """Decompose issue into subtasks via AI.
-
-        This method raises NotImplementedError because AI decomposition
-        must be invoked through the PilotSpaceAgent orchestrator using
-        the /decompose-tasks skill, not through the task service directly.
-
-        Use the chat interface: "/decompose-tasks {issue_id}"
-        """
-        raise NotImplementedError(
-            "AI decomposition requires PilotSpaceAgent session - "
-            "invoke via /decompose-tasks skill in chat interface"
-        )
 
     async def create_tasks_from_decomposition(
         self,

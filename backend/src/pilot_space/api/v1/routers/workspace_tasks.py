@@ -17,7 +17,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Path, Query, status
 
-from pilot_space.api.v1.dependencies import WorkspaceRepositoryDep
+from pilot_space.api.v1.dependencies import TaskServiceDep, WorkspaceRepositoryDep
 from pilot_space.api.v1.schemas.task import (
     ContextExportResponse,
     TaskCreateRequest,
@@ -73,14 +73,6 @@ async def _resolve_workspace(
     return workspace
 
 
-async def _get_task_service(_session: SessionDep):
-    """Get TaskService from DI container."""
-    from pilot_space.container.container import get_container
-
-    container = get_container()
-    return container.task_service()
-
-
 # ============================================================================
 # Task CRUD Endpoints
 # ============================================================================
@@ -98,10 +90,10 @@ async def list_tasks(
     _session: SessionDep,
     current_user_id: SyncedUserId,
     workspace_repo: WorkspaceRepositoryDep,
+    service: TaskServiceDep,
 ) -> TaskListResponse:
     """List all tasks for an issue with progress stats."""
     workspace = await _resolve_workspace(workspace_id, workspace_repo)
-    service = await _get_task_service(_session)
 
     result = await service.list_tasks(issue_id, workspace.id)
 
@@ -127,12 +119,12 @@ async def create_task(
     _session: SessionDep,
     current_user_id: SyncedUserId,
     workspace_repo: WorkspaceRepositoryDep,
+    service: TaskServiceDep,
 ) -> TaskResponse:
     """Create a new task for an issue."""
     from pilot_space.application.services.task_service import CreateTaskPayload
 
     workspace = await _resolve_workspace(workspace_id, workspace_repo)
-    service = await _get_task_service(_session)
 
     payload = CreateTaskPayload(
         workspace_id=workspace.id,
@@ -168,12 +160,12 @@ async def update_task(
     _session: SessionDep,
     current_user_id: SyncedUserId,
     workspace_repo: WorkspaceRepositoryDep,
+    service: TaskServiceDep,
 ) -> TaskResponse:
     """Update an existing task."""
     from pilot_space.application.services.task_service import UpdateTaskPayload
 
     workspace = await _resolve_workspace(workspace_id, workspace_repo)
-    service = await _get_task_service(_session)
 
     payload = UpdateTaskPayload(
         task_id=task_id,
@@ -212,10 +204,10 @@ async def delete_task(
     _session: SessionDep,
     current_user_id: SyncedUserId,
     workspace_repo: WorkspaceRepositoryDep,
+    service: TaskServiceDep,
 ) -> None:
     """Soft-delete a task."""
     workspace = await _resolve_workspace(workspace_id, workspace_repo)
-    service = await _get_task_service(_session)
 
     try:
         await service.delete_task(task_id, workspace.id)
@@ -236,10 +228,10 @@ async def update_task_status(
     _session: SessionDep,
     current_user_id: SyncedUserId,
     workspace_repo: WorkspaceRepositoryDep,
+    service: TaskServiceDep,
 ) -> TaskResponse:
     """Update task status (todo/in_progress/done)."""
     workspace = await _resolve_workspace(workspace_id, workspace_repo)
-    service = await _get_task_service(_session)
 
     try:
         task = await service.update_status(task_id, workspace.id, request.status)
@@ -262,10 +254,10 @@ async def reorder_tasks(
     _session: SessionDep,
     current_user_id: SyncedUserId,
     workspace_repo: WorkspaceRepositoryDep,
+    service: TaskServiceDep,
 ) -> TaskListResponse:
     """Reorder tasks for an issue."""
     workspace = await _resolve_workspace(workspace_id, workspace_repo)
-    service = await _get_task_service(_session)
 
     try:
         tasks = await service.reorder_tasks(issue_id, workspace.id, request.task_ids)
@@ -300,11 +292,11 @@ async def export_context(
     _session: SessionDep,
     current_user_id: SyncedUserId,
     workspace_repo: WorkspaceRepositoryDep,
+    service: TaskServiceDep,
     format: str = Query(default="markdown", pattern="^(markdown|claude_code|task_list)$"),
 ) -> ContextExportResponse:
     """Export issue context with tasks in various formats."""
     workspace = await _resolve_workspace(workspace_id, workspace_repo)
-    service = await _get_task_service(_session)
 
     try:
         result = await service.export_context(issue_id, workspace.id, format)
@@ -335,12 +327,11 @@ async def decompose_issue(
     issue_id: IssueIdPath,
     _session: SessionDep,
     current_user_id: SyncedUserId,
-    workspace_repo: WorkspaceRepositoryDep,
 ) -> dict[str, str]:
     """Decompose issue into subtasks using AI.
 
-    This endpoint is not yet wired to the AI orchestrator.
-    Use the PilotSpace chat interface with the /decompose-tasks skill instead.
+    This endpoint delegates to the PilotSpace chat interface.
+    Use the /decompose-tasks skill in chat for AI-powered decomposition.
 
     Example: "/decompose-tasks {issue_identifier}"
     """

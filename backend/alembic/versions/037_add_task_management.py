@@ -104,6 +104,14 @@ def upgrade() -> None:
                 AND wm.is_deleted = false
             )
         )
+        WITH CHECK (
+            workspace_id IN (
+                SELECT wm.workspace_id
+                FROM workspace_members wm
+                WHERE wm.user_id = current_setting('app.current_user_id', true)::uuid
+                AND wm.is_deleted = false
+            )
+        )
     """)
 
 

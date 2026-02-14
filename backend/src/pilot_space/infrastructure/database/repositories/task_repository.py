@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import asc, func, select, update
+from sqlalchemy import asc, case, func, select, update
 
 from pilot_space.infrastructure.database.models.task import Task, TaskStatus
 from pilot_space.infrastructure.database.repositories.base import BaseRepository
@@ -49,17 +49,26 @@ class TaskRepository(BaseRepository[Task]):
         issue_id: UUID,
         task_ids: list[UUID],
     ) -> None:
-        """Reorder tasks by updating sort_order based on position in list."""
-        for idx, task_id in enumerate(task_ids):
-            await self.session.execute(
-                update(Task)
-                .where(
-                    Task.id == task_id,
-                    Task.issue_id == issue_id,
-                    Task.is_deleted == False,  # noqa: E712
-                )
-                .values(sort_order=idx)
+        """Reorder tasks by updating sort_order based on position in list.
+
+        Uses a single UPDATE with CASE expression instead of N individual queries.
+        """
+        if not task_ids:
+            return
+
+        order_mapping = case(
+            *[(Task.id == task_id, idx) for idx, task_id in enumerate(task_ids)],
+            else_=Task.sort_order,
+        )
+        await self.session.execute(
+            update(Task)
+            .where(
+                Task.id.in_(task_ids),
+                Task.issue_id == issue_id,
+                Task.is_deleted == False,  # noqa: E712
             )
+            .values(sort_order=order_mapping)
+        )
         await self.session.flush()
 
     async def count_by_issue(

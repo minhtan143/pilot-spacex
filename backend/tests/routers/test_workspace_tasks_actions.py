@@ -24,8 +24,6 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.asyncio
 
-# Module path for patching _get_task_service in the router
-_TASK_SERVICE_PATH = "pilot_space.api.v1.routers.workspace_tasks._get_task_service"
 _RESOLVE_WORKSPACE_PATH = "pilot_space.api.v1.routers.workspace_tasks._resolve_workspace"
 
 
@@ -88,16 +86,17 @@ def mock_workspace() -> MagicMock:
 
 
 @pytest.fixture
-async def task_client() -> AsyncGenerator[AsyncClient, None]:
+async def task_client(mock_service: AsyncMock) -> AsyncGenerator[AsyncClient, None]:
     """Authenticated client with dependency overrides for task router tests.
 
     Imports app directly (not via conftest's app fixture) to avoid a pre-existing
     circular import triggered by conftest's `from pilot_space.container import Container`.
-    Uses app.dependency_overrides to bypass auth, session, and workspace repo
-    dependencies that FastAPI resolves before our handler code runs.
+    Uses app.dependency_overrides to bypass auth, session, workspace repo,
+    and task service dependencies that FastAPI resolves before handler code runs.
     """
     from httpx import ASGITransport, AsyncClient
 
+    from pilot_space.api.v1.dependencies import _get_task_service
     from pilot_space.api.v1.repository_deps import _get_workspace_repository
     from pilot_space.dependencies.auth import ensure_user_synced, get_session
     from pilot_space.main import app
@@ -110,6 +109,7 @@ async def task_client() -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_session] = mock_session_gen
     app.dependency_overrides[ensure_user_synced] = lambda: uuid4()
     app.dependency_overrides[_get_workspace_repository] = lambda: AsyncMock()
+    app.dependency_overrides[_get_task_service] = lambda: mock_service
 
     transport = ASGITransport(app=app)
     async with AsyncClient(
@@ -122,6 +122,7 @@ async def task_client() -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides.pop(get_session, None)
     app.dependency_overrides.pop(ensure_user_synced, None)
     app.dependency_overrides.pop(_get_workspace_repository, None)
+    app.dependency_overrides.pop(_get_task_service, None)
 
 
 # ============================================================================
@@ -145,10 +146,7 @@ class TestUpdateTaskStatus:
         mock_task.status = TaskStatus.IN_PROGRESS
         mock_service.update_status.return_value = mock_task
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.patch(
                 f"/api/v1/workspaces/{workspace_id}/tasks/{task_id}/status",
                 json={"status": "in_progress"},
@@ -169,10 +167,7 @@ class TestUpdateTaskStatus:
         """Returns 400 if task not found (status endpoint uses 400 for ValueError)."""
         mock_service.update_status.side_effect = ValueError("Task not found")
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.patch(
                 f"/api/v1/workspaces/{workspace_id}/tasks/{task_id}/status",
                 json={"status": "in_progress"},
@@ -229,10 +224,7 @@ class TestReorderTasks:
         task1_id = str(uuid4())
         task2_id = str(uuid4())
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.put(
                 f"/api/v1/workspaces/{workspace_id}/issues/{issue_id}/tasks/reorder",
                 json={"taskIds": [task2_id, task1_id]},
@@ -254,10 +246,7 @@ class TestReorderTasks:
         """Returns 400 if task ID not in issue."""
         mock_service.reorder_tasks.side_effect = ValueError("Task not found for issue")
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.put(
                 f"/api/v1/workspaces/{workspace_id}/issues/{issue_id}/tasks/reorder",
                 json={"taskIds": [str(uuid4())]},
@@ -304,10 +293,7 @@ class TestExportContext:
             "stats": {"tasks": 3, "completed": 1},
         }
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.get(
                 f"/api/v1/workspaces/{workspace_id}/issues/{issue_id}/context/export"
             )
@@ -334,10 +320,7 @@ class TestExportContext:
             "stats": {"tasks": 2, "completed": 0},
         }
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.get(
                 f"/api/v1/workspaces/{workspace_id}/issues/{issue_id}/context/export?format=claude_code"
             )
@@ -362,10 +345,7 @@ class TestExportContext:
             "stats": {"tasks": 1, "completed": 0},
         }
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.get(
                 f"/api/v1/workspaces/{workspace_id}/issues/{issue_id}/context/export?format=task_list"
             )
@@ -385,10 +365,7 @@ class TestExportContext:
         """Returns 404 if issue not found."""
         mock_service.export_context.side_effect = ValueError("Issue not found")
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.get(
                 f"/api/v1/workspaces/{workspace_id}/issues/{issue_id}/context/export"
             )

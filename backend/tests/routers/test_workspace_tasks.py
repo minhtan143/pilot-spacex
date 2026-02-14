@@ -24,8 +24,6 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.asyncio
 
-# Module path for patching _get_task_service in the router
-_TASK_SERVICE_PATH = "pilot_space.api.v1.routers.workspace_tasks._get_task_service"
 _RESOLVE_WORKSPACE_PATH = "pilot_space.api.v1.routers.workspace_tasks._resolve_workspace"
 
 
@@ -88,16 +86,17 @@ def mock_workspace() -> MagicMock:
 
 
 @pytest.fixture
-async def task_client() -> AsyncGenerator[AsyncClient, None]:
+async def task_client(mock_service: AsyncMock) -> AsyncGenerator[AsyncClient, None]:
     """Authenticated client with dependency overrides for task router tests.
 
     Imports app directly (not via conftest's app fixture) to avoid a pre-existing
     circular import triggered by conftest's `from pilot_space.container import Container`.
-    Uses app.dependency_overrides to bypass auth, session, and workspace repo
-    dependencies that FastAPI resolves before our handler code runs.
+    Uses app.dependency_overrides to bypass auth, session, workspace repo,
+    and task service dependencies that FastAPI resolves before handler code runs.
     """
     from httpx import ASGITransport, AsyncClient
 
+    from pilot_space.api.v1.dependencies import _get_task_service
     from pilot_space.api.v1.repository_deps import _get_workspace_repository
     from pilot_space.dependencies.auth import ensure_user_synced, get_session
     from pilot_space.main import app
@@ -110,6 +109,7 @@ async def task_client() -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_session] = mock_session_gen
     app.dependency_overrides[ensure_user_synced] = lambda: uuid4()
     app.dependency_overrides[_get_workspace_repository] = lambda: AsyncMock()
+    app.dependency_overrides[_get_task_service] = lambda: mock_service
 
     transport = ASGITransport(app=app)
     async with AsyncClient(
@@ -122,6 +122,7 @@ async def task_client() -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides.pop(get_session, None)
     app.dependency_overrides.pop(ensure_user_synced, None)
     app.dependency_overrides.pop(_get_workspace_repository, None)
+    app.dependency_overrides.pop(_get_task_service, None)
 
 
 # ============================================================================
@@ -149,10 +150,7 @@ class TestListTasks:
             "completion_percent": 0.0,
         }
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.get(
                 f"/api/v1/workspaces/{workspace_id}/issues/{issue_id}/tasks"
             )
@@ -180,10 +178,7 @@ class TestListTasks:
             "completion_percent": 0.0,
         }
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.get(
                 f"/api/v1/workspaces/{workspace_id}/issues/{issue_id}/tasks"
             )
@@ -213,10 +208,7 @@ class TestCreateTask:
         """Creates task successfully."""
         mock_service.create_task.return_value = mock_task
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.post(
                 f"/api/v1/workspaces/{workspace_id}/issues/{issue_id}/tasks",
                 json={
@@ -243,10 +235,7 @@ class TestCreateTask:
         """Creates task with minimal fields."""
         mock_service.create_task.return_value = mock_task
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.post(
                 f"/api/v1/workspaces/{workspace_id}/issues/{issue_id}/tasks",
                 json={"title": "Minimal Task"},
@@ -281,10 +270,7 @@ class TestCreateTask:
         """Returns 400 if issue not found."""
         mock_service.create_task.side_effect = ValueError("Issue not found")
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.post(
                 f"/api/v1/workspaces/{workspace_id}/issues/{issue_id}/tasks",
                 json={"title": "Task"},
@@ -314,10 +300,7 @@ class TestUpdateTask:
         mock_task.title = "Updated Title"
         mock_service.update_task.return_value = mock_task
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.patch(
                 f"/api/v1/workspaces/{workspace_id}/tasks/{task_id}",
                 json={"title": "Updated Title"},
@@ -338,10 +321,7 @@ class TestUpdateTask:
         """Returns 404 if task not found."""
         mock_service.update_task.side_effect = ValueError("Task not found")
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.patch(
                 f"/api/v1/workspaces/{workspace_id}/tasks/{task_id}",
                 json={"title": "Updated"},
@@ -362,10 +342,7 @@ class TestUpdateTask:
         mock_task.description = None
         mock_service.update_task.return_value = mock_task
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.patch(
                 f"/api/v1/workspaces/{workspace_id}/tasks/{task_id}",
                 json={"clearDescription": True},
@@ -395,10 +372,7 @@ class TestDeleteTask:
         """Deletes task successfully."""
         mock_service.delete_task.return_value = None
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.delete(
                 f"/api/v1/workspaces/{workspace_id}/tasks/{task_id}"
             )
@@ -416,10 +390,7 @@ class TestDeleteTask:
         """Returns 404 if task not found."""
         mock_service.delete_task.side_effect = ValueError("Task not found")
 
-        with (
-            patch(_TASK_SERVICE_PATH, return_value=mock_service),
-            patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace),
-        ):
+        with patch(_RESOLVE_WORKSPACE_PATH, return_value=mock_workspace):
             response = await task_client.delete(
                 f"/api/v1/workspaces/{workspace_id}/tasks/{task_id}"
             )

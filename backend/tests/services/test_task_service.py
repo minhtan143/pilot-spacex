@@ -144,7 +144,6 @@ class TestListTasks:
             ai_generated=False,
         )
         mock_task_repo.list_by_issue.return_value = [mock_task, task2]
-        mock_task_repo.count_by_issue.return_value = (2, 1)
 
         result = await task_service.list_tasks(issue_id, workspace_id)
 
@@ -162,7 +161,6 @@ class TestListTasks:
     ) -> None:
         """Returns empty list for issue with no tasks."""
         mock_task_repo.list_by_issue.return_value = []
-        mock_task_repo.count_by_issue.return_value = (0, 0)
 
         result = await task_service.list_tasks(issue_id, workspace_id)
 
@@ -179,8 +177,36 @@ class TestListTasks:
         issue_id: UUID,
     ) -> None:
         """Calculates completion percentage correctly."""
-        mock_task_repo.list_by_issue.return_value = []
-        mock_task_repo.count_by_issue.return_value = (3, 2)
+        tasks = [
+            Task(
+                id=uuid4(),
+                workspace_id=workspace_id,
+                issue_id=issue_id,
+                title="T1",
+                status=TaskStatus.DONE,
+                sort_order=0,
+                ai_generated=False,
+            ),
+            Task(
+                id=uuid4(),
+                workspace_id=workspace_id,
+                issue_id=issue_id,
+                title="T2",
+                status=TaskStatus.DONE,
+                sort_order=1,
+                ai_generated=False,
+            ),
+            Task(
+                id=uuid4(),
+                workspace_id=workspace_id,
+                issue_id=issue_id,
+                title="T3",
+                status=TaskStatus.TODO,
+                sort_order=2,
+                ai_generated=False,
+            ),
+        ]
+        mock_task_repo.list_by_issue.return_value = tasks
 
         result = await task_service.list_tasks(issue_id, workspace_id)
 
