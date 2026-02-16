@@ -117,7 +117,7 @@ class TaskListResponse(BaseSchema):
 class ContextExportResponse(BaseSchema):
     """Context export response."""
 
-    markdown: str
+    content: str
     format: str
     generated_at: datetime
     stats: dict[str, int] = Field(default_factory=dict, description="Counts of included items")

@@ -27,10 +27,7 @@ def upgrade() -> None:
     op.add_column("issues", sa.Column("acceptance_criteria", sa.JSON(), nullable=True))
     op.add_column("issues", sa.Column("technical_requirements", sa.Text(), nullable=True))
 
-    # 2. Create task_status_enum enum
-    op.execute("CREATE TYPE task_status_enum AS ENUM ('todo', 'in_progress', 'done')")
-
-    # 3. Create tasks table
+    # 2. Create tasks table (sa.Enum will auto-create task_status_enum type)
     op.create_table(
         "tasks",
         sa.Column(
