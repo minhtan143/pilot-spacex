@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router, prefix="/api/v1")
 
     # Health endpoints
+    app.add_api_route("/health", _liveness, methods=["GET"], tags=["health"])
     app.add_api_route("/health/live", _liveness, methods=["GET"], tags=["health"])
     app.add_api_route("/health/ready", _readiness, methods=["GET"], tags=["health"])
 
