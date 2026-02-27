@@ -242,10 +242,15 @@ async def approve_extracted_issues(
     """
     from pilot_space.application.services.issue import CreateIssuePayload, CreateIssueService
     from pilot_space.infrastructure.database.models.issue import IssuePriority
+    from pilot_space.infrastructure.database.models.note_issue_link import (
+        NoteIssueLink,
+        NoteLinkType,
+    )
     from pilot_space.infrastructure.database.repositories import (
         ActivityRepository,
         IssueRepository,
         LabelRepository,
+        NoteIssueLinkRepository,
     )
 
     if not body.issues:
@@ -274,12 +279,23 @@ async def approve_extracted_issues(
             "message": "Invalid project_id format",
         }
 
+    try:
+        note_uuid = UUID(note_id)
+    except (ValueError, AttributeError):
+        return {
+            "created_issues": [],
+            "created_count": 0,
+            "source_note_id": note_id,
+            "message": "Invalid note_id format",
+        }
+
     issue_service = CreateIssueService(
         session=session,
         issue_repository=IssueRepository(session),
         activity_repository=ActivityRepository(session),
         label_repository=LabelRepository(session),
     )
+    link_repo = NoteIssueLinkRepository(session)
 
     priority_map = {
         0: IssuePriority.URGENT,
@@ -302,7 +318,24 @@ async def approve_extracted_issues(
         try:
             result = await issue_service.execute(payload)
             if result.issue:
-                created_ids.append(str(result.issue.id))
+                issue_id = result.issue.id
+                created_ids.append(str(issue_id))
+                # Create NoteIssueLink so the note shows this extracted issue
+                existing = await link_repo.find_existing(
+                    note_id=note_uuid,
+                    issue_id=issue_id,
+                    link_type=NoteLinkType.EXTRACTED,
+                    workspace_id=UUID(str(workspace_id)),
+                )
+                if not existing:
+                    link = NoteIssueLink(
+                        note_id=note_uuid,
+                        issue_id=issue_id,
+                        link_type=NoteLinkType.EXTRACTED,
+                        block_id=issue_data.source_block_id,
+                        workspace_id=UUID(str(workspace_id)),
+                    )
+                    await link_repo.create(link)
         except ValueError as e:
             logger.warning(
                 "Failed to create issue",

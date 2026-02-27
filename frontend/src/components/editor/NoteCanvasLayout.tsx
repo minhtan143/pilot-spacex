@@ -18,6 +18,8 @@
  * - Mobile (<md): Overlay ChatView panel, compact header
  */
 import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { notesKeys } from '@/features/notes/hooks';
 import { EditorContent } from '@tiptap/react';
 import { motion } from 'motion/react';
 import { History, Users, MessageSquare } from 'lucide-react';
@@ -105,6 +107,7 @@ export function NoteCanvasLayout(props: NoteCanvasProps) {
 
   // Issue extraction SSE pipeline (Feature 009)
   const [extractionState, extractionActions] = useIssueExtraction();
+  const queryClient = useQueryClient();
 
   const handleExtractIssues = useCallback(
     (params: {
@@ -118,9 +121,15 @@ export function NoteCanvasLayout(props: NoteCanvasProps) {
         ...params,
         workspaceId,
         projectId: projectId ?? null,
+        onCreated: () => {
+          // Refetch the note so linkedIssues reflects the newly created NoteIssueLinks
+          void queryClient.invalidateQueries({
+            queryKey: notesKeys.detail(workspaceId, params.noteId),
+          });
+        },
       });
     },
-    [workspaceId, projectId, extractionActions]
+    [workspaceId, projectId, extractionActions, queryClient]
   );
 
   const {
