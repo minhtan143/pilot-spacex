@@ -143,6 +143,20 @@ class Settings(BaseSettings):
         description="Fernet encryption key for API key storage (32-byte base64-encoded)",
     )
 
+    # Auth Provider (supabase | authcore)
+    auth_provider: str = Field(
+        default="supabase",
+        description="JWT authority to use. 'supabase' (default) or 'authcore'.",
+    )
+    authcore_public_key: str | None = Field(
+        default=None,
+        description="PEM-encoded RSA public key for AuthCore RS256 token verification.",
+    )
+    authcore_url: str | None = Field(
+        default=None,
+        description="Base URL of the AuthCore service (reserved for future use).",
+    )
+
     # Space Configuration (Agent Isolation)
     space_storage_root: DirectoryPath = Field(
         default=default_folder_path,

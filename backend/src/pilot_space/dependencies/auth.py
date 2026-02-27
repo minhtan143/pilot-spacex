@@ -14,6 +14,13 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pilot_space.config import get_settings
+from pilot_space.dependencies.jwt_providers import (
+    JWTExpiredError,
+    JWTProvider,
+    JWTValidationError,
+    get_jwt_provider,
+)
 from pilot_space.infrastructure.auth import (
     SupabaseAuth,
     SupabaseAuthError,
@@ -23,8 +30,12 @@ from pilot_space.infrastructure.auth import (
 from pilot_space.infrastructure.database.engine import get_db_session
 from pilot_space.infrastructure.logging import get_logger
 
-# Singleton auth instance
+# Singleton auth instance (Supabase; kept for backward compat with callers that
+# depend on get_auth() or use TokenPayload directly, e.g. ensure_user_synced).
 _auth: SupabaseAuth | None = None
+
+# Singleton JWT provider (provider-agnostic, used by get_current_user_id).
+_jwt_provider: JWTProvider | None = None
 
 # Request-scoped session context (for dependency-injector integration)
 # Pattern from FastAPI docs: https://fastapi.tiangolo.com/ko/release-notes
@@ -41,6 +52,20 @@ def get_auth() -> SupabaseAuth:
     if _auth is None:
         _auth = SupabaseAuth()
     return _auth
+
+
+def _get_jwt_provider() -> JWTProvider:
+    """Get the configured JWT provider singleton.
+
+    Provider is chosen by settings.auth_provider (default: "supabase").
+
+    Returns:
+        JWTProvider implementation.
+    """
+    global _jwt_provider  # noqa: PLW0603
+    if _jwt_provider is None:
+        _jwt_provider = get_jwt_provider(get_settings())
+    return _jwt_provider
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -126,10 +151,12 @@ def get_current_user(
     """Get current authenticated user from request.
 
     First checks request.state (set by middleware), then validates token.
+    Uses the configured JWT provider (Supabase default, or AuthCore when
+    AUTH_PROVIDER=authcore) for token validation.
 
     Args:
         request: The current request.
-        auth: Supabase Auth instance.
+        auth: Supabase Auth instance (used only when provider is "supabase").
 
     Returns:
         Validated token payload with user info.
@@ -144,20 +171,57 @@ def get_current_user(
 
     # Validate token manually (for routes without middleware)
     token = get_token_from_header(request)
+
+    settings = get_settings()
+    provider_name = (settings.auth_provider or "supabase").lower().strip()
+
+    if provider_name == "supabase":
+        # Keep the original Supabase path — returns full TokenPayload
+        try:
+            return auth.validate_token(token)
+        except TokenExpiredError as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from e
+        except SupabaseAuthError as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(e),
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from e
+
+    # AuthCore path — validate via provider and synthesise a minimal TokenPayload
+    provider = _get_jwt_provider()
     try:
-        return auth.validate_token(token)
-    except TokenExpiredError as e:
+        user_id = provider.validate_token(token)
+    except JWTExpiredError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         ) from e
-    except SupabaseAuthError as e:
+    except JWTValidationError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         ) from e
+
+    # Synthesise a TokenPayload so downstream code continues to work unchanged
+    import time
+
+    return TokenPayload(
+        sub=str(user_id),
+        email=None,
+        role="authenticated",
+        aud="authenticated",
+        exp=int(time.time()) + 3600,
+        iat=int(time.time()),
+        app_metadata={},
+        user_metadata={},
+    )
 
 
 def get_current_user_id(
