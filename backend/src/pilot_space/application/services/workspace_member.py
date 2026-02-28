@@ -4,17 +4,28 @@ Handles member operations following CQRS-lite pattern (DD-064):
 - List workspace members
 - Update member role (with ownership transfer support)
 - Remove member (with constraints)
+- Member profile + contribution stats (MemberProfileService)
 
 Source: FR-017, T020a (ownership transfer), M-5 (prevent owner self-removal).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload, selectinload
+
+from pilot_space.infrastructure.database.models.activity import Activity, ActivityType
+from pilot_space.infrastructure.database.models.cycle import Cycle, CycleStatus
+from pilot_space.infrastructure.database.models.integration import IntegrationLink
+from pilot_space.infrastructure.database.models.issue import Issue
+from pilot_space.infrastructure.database.models.state import State, StateGroup
 from pilot_space.infrastructure.database.models.workspace_member import WorkspaceRole
 from pilot_space.infrastructure.logging import get_logger
 
@@ -28,6 +39,21 @@ if TYPE_CHECKING:
     )
 
 logger = get_logger(__name__)
+
+
+# ===== Custom Exceptions =====
+
+
+class WorkspaceNotFoundError(ValueError):
+    """Raised when the workspace does not exist."""
+
+
+class MemberNotFoundError(ValueError):
+    """Raised when the target member is not in the workspace."""
+
+
+class UnauthorizedError(ValueError):
+    """Raised when the actor lacks required permissions."""
 
 
 # ===== Payloads & Results =====
@@ -87,6 +113,23 @@ class RemoveMemberResult:
     removed_at: datetime
 
 
+@dataclass
+class UpdateMemberAvailabilityPayload:
+    """Payload for updating member weekly available hours."""
+
+    workspace_id: UUID
+    user_id: UUID
+    actor_id: UUID
+    weekly_available_hours: float  # must be 0..168
+
+
+@dataclass
+class UpdateMemberAvailabilityResult:
+    """Result of update_availability operation."""
+
+    member: WorkspaceMember
+
+
 class WorkspaceMemberService:
     """Service for workspace member operations.
 
@@ -112,19 +155,16 @@ class WorkspaceMemberService:
             List of workspace members.
 
         Raises:
-            ValueError: If workspace not found or user not member.
+            WorkspaceNotFoundError: If workspace not found.
+            UnauthorizedError: If user not a member.
         """
-        # H-1/H-2 fix: use get_with_members to eagerly load members
         workspace = await self.workspace_repo.get_with_members(payload.workspace_id)
         if not workspace:
-            msg = "Workspace not found"
-            raise ValueError(msg)
+            raise WorkspaceNotFoundError("Workspace not found")
 
-        # Check membership
         is_member = any(m.user_id == payload.requesting_user_id for m in (workspace.members or []))
         if not is_member:
-            msg = "Not a member of this workspace"
-            raise ValueError(msg)
+            raise UnauthorizedError("Not a member of this workspace")
 
         return ListMembersResult(
             members=workspace.members or [],
@@ -147,31 +187,27 @@ class WorkspaceMemberService:
             Updated member with old/new roles.
 
         Raises:
-            ValueError: If not found, not authorized, or invalid operation.
+            WorkspaceNotFoundError: If workspace not found.
+            MemberNotFoundError: If target member not found.
+            UnauthorizedError: If actor lacks required permissions.
         """
-        # H-1 fix: use get_with_members to eagerly load members
         workspace = await self.workspace_repo.get_with_members(payload.workspace_id)
         if not workspace:
-            msg = "Workspace not found"
-            raise ValueError(msg)
+            raise WorkspaceNotFoundError("Workspace not found")
 
-        # Check actor is admin
         actor_member = next(
             (m for m in (workspace.members or []) if m.user_id == payload.actor_id),
             None,
         )
         if not actor_member or not actor_member.is_admin:
-            msg = "Admin role required"
-            raise ValueError(msg)
+            raise UnauthorizedError("Admin role required")
 
-        # Find target member
         target_member = next(
             (m for m in (workspace.members or []) if m.user_id == payload.target_user_id),
             None,
         )
         if not target_member:
-            msg = "Member not found"
-            raise ValueError(msg)
+            raise MemberNotFoundError("Member not found")
 
         old_role = target_member.role.value
         new_role_enum = WorkspaceRole(payload.new_role)
@@ -181,10 +217,8 @@ class WorkspaceMemberService:
         # Ownership transfer guard (FR-017, T020a)
         if new_role_enum == WorkspaceRole.OWNER:
             if not actor_member.is_owner:
-                msg = "Only the workspace owner can transfer ownership"
-                raise ValueError(msg)
+                raise UnauthorizedError("Only the workspace owner can transfer ownership")
 
-            # Demote current owner to admin
             await self.workspace_repo.update_member_role(
                 payload.workspace_id,
                 payload.actor_id,
@@ -192,7 +226,6 @@ class WorkspaceMemberService:
             )
             ownership_transferred = True
 
-        # Update target member role
         updated_member = await self.workspace_repo.update_member_role(
             payload.workspace_id,
             payload.target_user_id,
@@ -200,8 +233,7 @@ class WorkspaceMemberService:
         )
 
         if not updated_member:
-            msg = "Member not found"
-            raise ValueError(msg)
+            raise MemberNotFoundError("Member not found")
 
         logger.info(
             "Member role updated",
@@ -239,15 +271,14 @@ class WorkspaceMemberService:
             Removed member info.
 
         Raises:
-            ValueError: If not found, not authorized, or violates constraints.
+            WorkspaceNotFoundError: If workspace not found.
+            MemberNotFoundError: If target not found.
+            UnauthorizedError: If actor lacks permissions or constraint violated.
         """
-        # H-2 fix: use get_with_members to eagerly load members
         workspace = await self.workspace_repo.get_with_members(payload.workspace_id)
         if not workspace:
-            msg = "Workspace not found"
-            raise ValueError(msg)
+            raise WorkspaceNotFoundError("Workspace not found")
 
-        # Check authorization (admin/owner or self)
         actor_member = next(
             (m for m in (workspace.members or []) if m.user_id == payload.actor_id),
             None,
@@ -256,20 +287,19 @@ class WorkspaceMemberService:
         is_self = payload.target_user_id == payload.actor_id
 
         if not (is_admin or is_self):
-            msg = "Admin role required to remove other members"
-            raise ValueError(msg)
+            raise UnauthorizedError("Admin role required to remove other members")
 
         # M-5 fix: prevent owner from removing themselves
         if is_self and actor_member and actor_member.is_owner:
-            msg = "Workspace owner cannot remove themselves. Transfer ownership first."
-            raise ValueError(msg)
+            raise UnauthorizedError(
+                "Workspace owner cannot remove themselves. Transfer ownership first."
+            )
 
         # Prevent removing the only admin/owner
         if is_self and is_admin:
             admin_count = sum(1 for m in (workspace.members or []) if m.is_admin)
             if admin_count == 1:
-                msg = "Cannot remove the only admin from workspace"
-                raise ValueError(msg)
+                raise UnauthorizedError("Cannot remove the only admin from workspace")
 
         await self.workspace_repo.remove_member(
             payload.workspace_id,
@@ -290,13 +320,358 @@ class WorkspaceMemberService:
             removed_at=datetime.now(tz=UTC),
         )
 
+    async def update_availability(
+        self,
+        payload: UpdateMemberAvailabilityPayload,
+        session: AsyncSession,
+    ) -> UpdateMemberAvailabilityResult:
+        """Update weekly available hours. Self or admin only.
+
+        Args:
+            payload: Availability update payload.
+            session: Database session.
+
+        Returns:
+            Updated member.
+
+        Raises:
+            WorkspaceNotFoundError: If workspace not found.
+            MemberNotFoundError: If member not found in workspace.
+            UnauthorizedError: If actor is neither self nor admin.
+        """
+        from pilot_space.infrastructure.database.models.workspace_member import (
+            WorkspaceMember as WMModel,
+        )
+        from pilot_space.infrastructure.database.rls import set_rls_context
+
+        await set_rls_context(session, payload.actor_id, payload.workspace_id)
+        workspace = await self.workspace_repo.get_with_members(payload.workspace_id)
+        if not workspace:
+            raise WorkspaceNotFoundError("Workspace not found")
+
+        actor_member = next(
+            (m for m in (workspace.members or []) if m.user_id == payload.actor_id), None
+        )
+        is_self = payload.actor_id == payload.user_id
+        is_admin = actor_member is not None and actor_member.is_admin
+
+        if not (is_self or is_admin):
+            raise UnauthorizedError("Only admins or the member themselves can update availability")
+
+        result = await session.execute(
+            select(WMModel)
+            .options(selectinload(WMModel.user))
+            .where(
+                WMModel.workspace_id == payload.workspace_id,
+                WMModel.user_id == payload.user_id,
+            )
+        )
+        member = result.scalar_one_or_none()
+        if not member:
+            raise MemberNotFoundError("Member not found")
+
+        member.weekly_available_hours = payload.weekly_available_hours
+        await session.flush()
+        await session.refresh(member)
+        return UpdateMemberAvailabilityResult(member=member)
+
+
+@dataclass
+class GetMemberProfilePayload:
+    """Payload for getting member profile with stats."""
+
+    workspace_id: UUID
+    user_id: UUID
+    requesting_user_id: UUID
+
+
+@dataclass
+class GetMemberProfileResult:
+    """Result of get_profile — member + computed stats."""
+
+    member: WorkspaceMember
+    issues_created: int
+    issues_assigned: int
+    cycle_velocity: float
+    capacity_utilization_pct: float
+    pr_commit_links_count: int
+
+
+@dataclass
+class GetMemberActivityPayload:
+    """Payload for paginated member activity."""
+
+    workspace_id: UUID
+    user_id: UUID
+    requesting_user_id: UUID
+    page: int = 1
+    page_size: int = 20
+    type_filter: ActivityType | None = None
+
+
+@dataclass
+class GetMemberActivityResult:
+    """Paginated activity result."""
+
+    items: list[Activity] = field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+
+
+class MemberProfileService:
+    """Service for member profile + contribution stats.
+
+    Computes all 5 stats using asyncio.gather for parallelism (no N+1):
+    - issues_created: single COUNT with reporter_id filter
+    - issues_assigned: single COUNT with assignee_id filter
+    - cycle_velocity: 2 queries (last-3 cycle IDs, then count closed issues)
+    - capacity_utilization_pct: 2 queries (active cycle ID, then sum estimate_hours)
+    - pr_commit_links_count: single COUNT with JOIN to issues
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        workspace_repo: WorkspaceRepository,
+    ) -> None:
+        self.session = session
+        self.workspace_repo = workspace_repo
+
+    async def get_profile(
+        self,
+        payload: GetMemberProfilePayload,
+    ) -> GetMemberProfileResult:
+        """Fetch member + compute contribution stats.
+
+        Args:
+            payload: Profile request payload.
+
+        Returns:
+            Member with aggregated stats.
+
+        Raises:
+            WorkspaceNotFoundError: If workspace not found.
+            UnauthorizedError: If requester is not a workspace member.
+            MemberNotFoundError: If target member not found.
+        """
+        workspace = await self.workspace_repo.get_with_members(payload.workspace_id)
+        if not workspace:
+            raise WorkspaceNotFoundError("Workspace not found")
+
+        is_member = any(m.user_id == payload.requesting_user_id for m in (workspace.members or []))
+        if not is_member:
+            raise UnauthorizedError("Not a member of this workspace")
+
+        member = next(
+            (m for m in (workspace.members or []) if m.user_id == payload.user_id),
+            None,
+        )
+        if not member:
+            raise MemberNotFoundError("Member not found")
+
+        # Group 1: all independent queries run in parallel
+        (
+            created_result,
+            assigned_result,
+            cycle_ids_result,
+            active_cycle_result,
+            pr_result,
+        ) = await asyncio.gather(
+            self.session.execute(
+                select(func.count(Issue.id)).where(
+                    and_(
+                        Issue.workspace_id == payload.workspace_id,
+                        Issue.reporter_id == payload.user_id,
+                        Issue.is_deleted == False,  # noqa: E712
+                    )
+                )
+            ),
+            self.session.execute(
+                select(func.count(Issue.id)).where(
+                    and_(
+                        Issue.workspace_id == payload.workspace_id,
+                        Issue.assignee_id == payload.user_id,
+                        Issue.is_deleted == False,  # noqa: E712
+                    )
+                )
+            ),
+            self.session.execute(
+                select(Cycle.id)
+                .where(
+                    and_(
+                        Cycle.workspace_id == payload.workspace_id,
+                        Cycle.status == CycleStatus.COMPLETED,
+                        Cycle.is_deleted == False,  # noqa: E712
+                    )
+                )
+                .order_by(Cycle.end_date.desc())
+                .limit(3)
+            ),
+            self.session.execute(
+                select(Cycle.id)
+                .where(
+                    and_(
+                        Cycle.workspace_id == payload.workspace_id,
+                        Cycle.status == CycleStatus.ACTIVE,
+                        Cycle.is_deleted == False,  # noqa: E712
+                    )
+                )
+                .limit(1)
+            ),
+            self.session.execute(
+                select(func.count(IntegrationLink.id))
+                .join(Issue, IntegrationLink.issue_id == Issue.id)
+                .where(
+                    and_(
+                        or_(
+                            Issue.assignee_id == payload.user_id,
+                            Issue.reporter_id == payload.user_id,
+                        ),
+                        Issue.workspace_id == payload.workspace_id,
+                        Issue.is_deleted == False,  # noqa: E712
+                        IntegrationLink.is_deleted == False,  # noqa: E712
+                    )
+                )
+            ),
+        )
+
+        issues_created = created_result.scalar() or 0
+        issues_assigned = assigned_result.scalar() or 0
+        cycle_ids = cycle_ids_result.scalars().all()
+        active_cycle_id = active_cycle_result.scalar()
+        pr_commit_links_count = pr_result.scalar() or 0
+
+        # Group 2: dependent queries run in parallel after group 1
+        async def _get_cycle_closed_count() -> int:
+            if not cycle_ids:
+                return 0
+            closed_result = await self.session.execute(
+                select(func.count(Issue.id))
+                .join(State, Issue.state_id == State.id)
+                .where(
+                    and_(
+                        Issue.cycle_id.in_(cycle_ids),
+                        Issue.assignee_id == payload.user_id,
+                        Issue.is_deleted == False,  # noqa: E712
+                        State.group == StateGroup.COMPLETED,
+                    )
+                )
+            )
+            return closed_result.scalar() or 0
+
+        async def _get_committed_hours() -> float:
+            if not active_cycle_id:
+                return 0.0
+            committed_result = await self.session.execute(
+                select(func.coalesce(func.sum(Issue.estimate_hours), 0.0)).where(
+                    and_(
+                        Issue.cycle_id == active_cycle_id,
+                        Issue.assignee_id == payload.user_id,
+                        Issue.is_deleted == False,  # noqa: E712
+                    )
+                )
+            )
+            return float(committed_result.scalar() or 0.0)
+
+        total_closed, committed_hours = await asyncio.gather(
+            _get_cycle_closed_count(),
+            _get_committed_hours(),
+        )
+
+        cycle_velocity = total_closed / len(cycle_ids) if cycle_ids else 0.0
+        available = float(member.weekly_available_hours or 40.0)
+        utilization = min(100.0, committed_hours / available * 100.0) if available > 0 else 0.0
+
+        return GetMemberProfileResult(
+            member=member,
+            issues_created=issues_created,
+            issues_assigned=issues_assigned,
+            cycle_velocity=cycle_velocity,
+            capacity_utilization_pct=utilization,
+            pr_commit_links_count=pr_commit_links_count,
+        )
+
+    async def get_activity(
+        self,
+        payload: GetMemberActivityPayload,
+    ) -> GetMemberActivityResult:
+        """Fetch paginated activity stream for a member.
+
+        Args:
+            payload: Activity request payload.
+
+        Returns:
+            Paginated list of Activity ORM objects.
+
+        Raises:
+            WorkspaceNotFoundError: If workspace not found.
+            UnauthorizedError: If requester is not authorized.
+        """
+        workspace = await self.workspace_repo.get_with_members(payload.workspace_id)
+        if not workspace:
+            raise WorkspaceNotFoundError("Workspace not found")
+
+        is_member = any(m.user_id == payload.requesting_user_id for m in (workspace.members or []))
+        if not is_member:
+            raise UnauthorizedError("Not a member of this workspace")
+
+        page_size = min(payload.page_size, 50)
+        offset = (payload.page - 1) * page_size
+
+        base_filter = and_(
+            Activity.workspace_id == payload.workspace_id,
+            Activity.actor_id == payload.user_id,
+            Activity.is_deleted == False,  # noqa: E712
+        )
+        if payload.type_filter:
+            base_filter = and_(
+                base_filter,
+                Activity.activity_type == payload.type_filter,
+            )
+
+        total_result = await self.session.execute(
+            select(func.count(Activity.id)).where(base_filter)
+        )
+        total = total_result.scalar() or 0
+
+        items_result = await self.session.execute(
+            select(Activity)
+            .options(
+                joinedload(Activity.issue),
+                joinedload(Activity.actor),
+            )
+            .where(base_filter)
+            .order_by(Activity.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
+        items = list(items_result.unique().scalars().all())
+
+        return GetMemberActivityResult(
+            items=items,
+            total=total,
+            page=payload.page,
+            page_size=page_size,
+        )
+
 
 __all__ = [
+    "GetMemberActivityPayload",
+    "GetMemberActivityResult",
+    "GetMemberProfilePayload",
+    "GetMemberProfileResult",
     "ListMembersPayload",
     "ListMembersResult",
+    "MemberNotFoundError",
+    "MemberProfileService",
     "RemoveMemberPayload",
     "RemoveMemberResult",
+    "UnauthorizedError",
+    "UpdateMemberAvailabilityPayload",
+    "UpdateMemberAvailabilityResult",
     "UpdateMemberRolePayload",
     "UpdateMemberRoleResult",
     "WorkspaceMemberService",
+    "WorkspaceNotFoundError",
 ]

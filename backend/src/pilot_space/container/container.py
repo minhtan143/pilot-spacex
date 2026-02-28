@@ -96,7 +96,10 @@ from pilot_space.application.services.workspace import WorkspaceService
 from pilot_space.application.services.workspace_invitation import (
     WorkspaceInvitationService,
 )
-from pilot_space.application.services.workspace_member import WorkspaceMemberService
+from pilot_space.application.services.workspace_member import (
+    MemberProfileService,
+    WorkspaceMemberService,
+)
 from pilot_space.config import Settings
 from pilot_space.container._base import InfraContainer
 from pilot_space.container._factories import (
@@ -128,46 +131,6 @@ class Container(InfraContainer):
 
     wiring_config = containers.WiringConfiguration(
         modules=[
-            # # Core routers
-            # "pilot_space.api.v1.routers.auth",
-            # "pilot_space.api.v1.routers.workspaces",
-            # "pilot_space.api.v1.routers.workspace_members",
-            # "pilot_space.api.v1.routers.workspace_invitations",
-            # "pilot_space.api.v1.routers.workspace_notes",
-            # "pilot_space.api.v1.routers.workspace_issues",
-            # "pilot_space.api.v1.routers.workspace_cycles",
-            # "pilot_space.api.v1.routers.workspace_note_issue_links",
-            # "pilot_space.api.v1.routers.workspace_ai_settings",
-            # "pilot_space.api.v1.routers.projects",
-            # "pilot_space.api.v1.routers.issues",
-            # "pilot_space.api.v1.routers.cycles",
-            # # AI routers
-            # "pilot_space.api.v1.routers.ai",
-            # "pilot_space.api.v1.routers.ai_chat",
-            # "pilot_space.api.v1.routers.ai_annotations",
-            # "pilot_space.api.v1.routers.ai_approvals",
-            # "pilot_space.api.v1.routers.ai_configuration",
-            # "pilot_space.api.v1.routers.ai_costs",
-            # "pilot_space.api.v1.routers.ai_extraction",
-            # "pilot_space.api.v1.routers.ai_pr_review",
-            # "pilot_space.api.v1.routers.ai_sessions",
-            # "pilot_space.api.v1.routers.ai_tasks",
-            # "pilot_space.api.v1.routers.ghost_text",
-            # "pilot_space.api.v1.routers.issues_ai",
-            # "pilot_space.api.v1.routers.issues_ai_context",
-            # "pilot_space.api.v1.routers.issues_ai_context_streaming",
-            # "pilot_space.api.v1.routers.notes_ai",
-            # "pilot_space.api.v1.routers.workspace_notes_ai",
-            # # Integration routers
-            # "pilot_space.api.v1.routers.integrations",
-            # "pilot_space.api.v1.routers.webhooks",
-            # # Support routers
-            # "pilot_space.api.v1.routers.homepage",
-            # "pilot_space.api.v1.routers.onboarding",
-            # "pilot_space.api.v1.routers.role_skills",
-            # "pilot_space.api.v1.routers.skills",
-            # "pilot_space.api.v1.routers.mcp_tools",
-            # Dependencies
             "pilot_space.dependencies",
             "pilot_space.api.v1.dependencies",
             "pilot_space.api.v1.repository_deps",
@@ -507,6 +470,12 @@ class Container(InfraContainer):
 
     workspace_member_service = providers.Factory(
         WorkspaceMemberService,
+        workspace_repo=InfraContainer.workspace_repository,
+    )
+
+    member_profile_service = providers.Factory(
+        MemberProfileService,
+        session=providers.Callable(get_current_session),
         workspace_repo=InfraContainer.workspace_repository,
     )
 

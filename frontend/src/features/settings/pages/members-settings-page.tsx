@@ -26,6 +26,7 @@ import { useWorkspaceInvitations, useCancelInvitation } from '../hooks/use-works
 import { ConfirmActionDialog } from '../components/confirm-action-dialog';
 import { MemberRow, ROLE_HIERARCHY } from '../components/member-row';
 import { InviteMemberDialog } from '../components/invite-member-dialog';
+import { MemberProfileSheet } from '@/features/members';
 
 function MembersLoadingSkeleton() {
   return (
@@ -58,6 +59,7 @@ export const MembersSettingsPage = observer(function MembersSettingsPage() {
 
   const cancelInvitation = useCancelInvitation(workspaceId);
 
+  const [selectedMemberId, setSelectedMemberId] = React.useState<string | null>(null);
   const [updatingMemberId, setUpdatingMemberId] = React.useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = React.useState<{
     open: boolean;
@@ -273,6 +275,7 @@ export const MembersSettingsPage = observer(function MembersSettingsPage() {
                   onTransferOwnership={handleTransferOwnership}
                   onAvailabilityChange={handleAvailabilityChange}
                   isUpdating={updatingMemberId === member.userId}
+                  onClick={() => setSelectedMemberId(member.userId)}
                 />
               ))}
               {sortedMembers.length === 0 && (
@@ -358,6 +361,12 @@ export const MembersSettingsPage = observer(function MembersSettingsPage() {
           variant={confirmDialog.variant}
         />
       </div>
+      <MemberProfileSheet
+        userId={selectedMemberId}
+        workspaceId={workspaceId}
+        workspaceSlug={workspaceSlug}
+        onClose={() => setSelectedMemberId(null)}
+      />
     </div>
   );
 });

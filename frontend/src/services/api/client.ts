@@ -121,7 +121,8 @@ function createApiClient(): AxiosInstance {
       if (!config.headers['X-Workspace-Id'] && !config.headers['X-Workspace-ID']) {
         if (typeof window !== 'undefined') {
           const storedWorkspaceId = localStorage.getItem('pilot-space:current-workspace');
-          if (storedWorkspaceId) {
+          const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (storedWorkspaceId && uuidPattern.test(storedWorkspaceId)) {
             config.headers['X-Workspace-Id'] = storedWorkspaceId;
           }
         }

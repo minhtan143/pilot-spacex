@@ -83,10 +83,11 @@ from pilot_space.application.services.role_skill import (
 )
 from pilot_space.application.services.task_service import TaskService
 from pilot_space.application.services.workspace import WorkspaceService
-from pilot_space.application.services.workspace_invitation import (
-    WorkspaceInvitationService,
+from pilot_space.application.services.workspace_invitation import WorkspaceInvitationService
+from pilot_space.application.services.workspace_member import (
+    MemberProfileService,
+    WorkspaceMemberService,
 )
-from pilot_space.application.services.workspace_member import WorkspaceMemberService
 from pilot_space.container import Container
 
 # ===== Issue Service Dependencies =====
@@ -593,6 +594,16 @@ WorkspaceMemberServiceDep = Annotated[
 
 
 @inject
+def _get_member_profile_service(
+    svc: MemberProfileService = Depends(Provide[Container.member_profile_service]),
+) -> MemberProfileService:
+    return svc
+
+
+MemberProfileServiceDep = Annotated[MemberProfileService, Depends(_get_member_profile_service)]
+
+
+@inject
 def _get_workspace_invitation_service(
     svc: WorkspaceInvitationService = Depends(Provide[Container.workspace_invitation_service]),
 ) -> WorkspaceInvitationService:
@@ -629,7 +640,6 @@ TaskServiceDep = Annotated[TaskService, Depends(_get_task_service)]
 
 
 __all__ = [  # noqa: RUF022
-    # Repository Dependencies
     "ActivityRepositoryDep",
     "CycleRepositoryDep",
     "InvitationRepositoryDep",
@@ -639,7 +649,6 @@ __all__ = [  # noqa: RUF022
     "ProjectRepositoryDep",
     "UserRepositoryDep",
     "WorkspaceRepositoryDep",
-    # Service Dependencies
     "AuthServiceDep",
     "ActivityServiceDep",
     "AddIssueToCycleServiceDep",
@@ -683,6 +692,7 @@ __all__ = [  # noqa: RUF022
     "UpdateNoteServiceDep",
     "UpdateOnboardingServiceDep",
     "UpdateRoleSkillServiceDep",
+    "MemberProfileServiceDep",
     "WorkspaceServiceDep",
     "WorkspaceMemberServiceDep",
     "WorkspaceInvitationServiceDep",

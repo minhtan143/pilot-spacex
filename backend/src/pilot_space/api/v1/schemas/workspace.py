@@ -110,8 +110,8 @@ class WorkspaceMemberCreate(BaseSchema):
 
     email: str = Field(description="User email to invite")
     role: str = Field(
-        default="member",
-        pattern="^(owner|admin|member|guest)$",
+        default="MEMBER",
+        pattern="^(OWNER|ADMIN|MEMBER|GUEST)$",
         description="Role to assign",
     )
 
@@ -124,7 +124,7 @@ class WorkspaceMemberUpdate(BaseSchema):
     """
 
     role: str = Field(
-        pattern="^(owner|admin|member|guest)$",
+        pattern="^(OWNER|ADMIN|MEMBER|GUEST)$",
         description="New role for member",
     )
 
@@ -181,8 +181,8 @@ class InvitationCreateRequest(BaseSchema):
         description="Email address to invite",
     )
     role: str = Field(
-        default="member",
-        pattern="^(admin|member|guest)$",
+        default="MEMBER",
+        pattern="^(ADMIN|MEMBER|GUEST)$",
         description="Role to assign",
     )
     suggested_sdlc_role: str | None = Field(
@@ -214,6 +214,79 @@ class WorkspaceMemberResponse(BaseSchema):
         default=40.0,
         description="Hours available per week for capacity planning",
     )
+
+
+class MemberContributionStats(BaseSchema):
+    """Contribution metrics for a workspace member.
+
+    Attributes:
+        issues_created: Count of issues where member is reporter.
+        issues_assigned: Count of issues where member is assignee.
+        cycle_velocity: Average issues closed per sprint (last 3 completed cycles).
+        capacity_utilization_pct: committed_hours / weekly_available_hours * 100, clamped [0, 100].
+        pr_commit_links_count: Count of PR/commit integration links on member's issues.
+    """
+
+    issues_created: int = Field(description="Issues reported by this member")
+    issues_assigned: int = Field(description="Issues assigned to this member")
+    cycle_velocity: float = Field(description="Avg issues closed per sprint (last 3 cycles)")
+    capacity_utilization_pct: float = Field(
+        description="Committed hours / available hours × 100, clamped to [0, 100]"
+    )
+    pr_commit_links_count: int = Field(description="PR/commit links on member's issues")
+
+
+class MemberProfileResponse(WorkspaceMemberResponse):
+    """Full member profile with contribution stats.
+
+    Extends WorkspaceMemberResponse with aggregated contribution metrics.
+    """
+
+    stats: MemberContributionStats = Field(description="Contribution metrics")
+
+
+class MemberActivityItem(BaseSchema):
+    """Single activity event from the member's timeline.
+
+    Attributes:
+        id: Activity UUID.
+        activity_type: Type of activity (state_change, comment, field_update, etc.).
+        field: Field that changed (for field_update type).
+        old_value: Previous value.
+        new_value: New value.
+        comment: Comment body (for comment type).
+        created_at: When this activity occurred.
+        issue_id: Related issue UUID.
+        issue_identifier: Human-readable issue identifier (e.g., "PS-42").
+        issue_title: Issue title for display.
+    """
+
+    id: UUID = Field(description="Activity UUID")
+    activity_type: str = Field(description="Activity type")
+    field: str | None = Field(default=None, description="Changed field name")
+    old_value: str | None = Field(default=None, description="Previous value")
+    new_value: str | None = Field(default=None, description="New value")
+    comment: str | None = Field(default=None, description="Comment body")
+    created_at: datetime = Field(description="Activity timestamp")
+    issue_id: UUID | None = Field(default=None, description="Related issue UUID")
+    issue_identifier: str | None = Field(default=None, description="Issue identifier e.g. PS-42")
+    issue_title: str | None = Field(default=None, description="Issue title")
+
+
+class MemberActivityResponse(BaseSchema):
+    """Paginated member activity response.
+
+    Attributes:
+        items: Activity items for current page.
+        total: Total activity count.
+        page: Current page (1-indexed).
+        page_size: Items per page.
+    """
+
+    items: list[MemberActivityItem] = Field(description="Activity items")
+    total: int = Field(description="Total count")
+    page: int = Field(description="Current page (1-indexed)")
+    page_size: int = Field(description="Items per page")
 
 
 # AI Settings schemas (T062-T064)
@@ -346,6 +419,10 @@ __all__ = [
     "InvitationCreateRequest",
     "InvitationResponse",
     "KeyValidationResult",
+    "MemberActivityItem",
+    "MemberActivityResponse",
+    "MemberContributionStats",
+    "MemberProfileResponse",
     "ProviderStatus",
     "WorkspaceAISettingsResponse",
     "WorkspaceAISettingsUpdate",

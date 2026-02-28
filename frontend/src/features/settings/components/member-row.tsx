@@ -35,6 +35,7 @@ interface MemberRowProps {
   onTransferOwnership?: (userId: string) => void;
   onAvailabilityChange?: (userId: string, hours: number) => void;
   isUpdating?: boolean;
+  onClick?: () => void;
 }
 
 const ROLE_HIERARCHY: Record<string, number> = {
@@ -83,6 +84,7 @@ export function MemberRow({
   onTransferOwnership,
   onAvailabilityChange,
   isUpdating = false,
+  onClick,
 }: MemberRowProps) {
   const isAdmin = currentUserRole === 'admin' || currentUserRole === 'owner';
   const isOwner = currentUserRole === 'owner';
@@ -97,8 +99,22 @@ export function MemberRow({
 
   return (
     <div
-      className="flex flex-col gap-3 rounded-lg border border-border p-4 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:gap-4"
-      role="listitem"
+      className={`flex flex-col gap-3 rounded-lg border border-border p-4 transition-colors sm:flex-row sm:items-center sm:gap-4 ${onClick ? 'cursor-pointer hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring' : 'hover:bg-muted/30'}`}
+      role={onClick ? 'button' : 'listitem'}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      aria-label={onClick ? `View profile for ${member.fullName ?? member.email}` : undefined}
+      aria-haspopup={onClick ? 'dialog' : undefined}
     >
       {/* Avatar + Name group */}
       <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -126,7 +142,7 @@ export function MemberRow({
       </p>
 
       {/* Weekly Available Hours (T-246) */}
-      <div className="hidden items-center gap-1 sm:flex">
+      <div className="hidden items-center gap-1 sm:flex" onClick={(e) => e.stopPropagation()}>
         <input
           type="number"
           min={0}
@@ -148,7 +164,7 @@ export function MemberRow({
       </div>
 
       {/* Role + Actions group */}
-      <div className="flex items-center gap-2 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-4" onClick={(e) => e.stopPropagation()}>
         <div className="shrink-0">
           {canEditRole ? (
             <Select

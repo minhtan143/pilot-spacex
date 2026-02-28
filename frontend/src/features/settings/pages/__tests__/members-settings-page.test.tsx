@@ -143,6 +143,10 @@ vi.mock('@/services/api', () => ({
   apiClient: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
 }));
 
+vi.mock('@/features/members/components/MemberProfileSheet', () => ({
+  MemberProfileSheet: () => null,
+}));
+
 import { MembersSettingsPage } from '../members-settings-page';
 
 const sampleMembers = [
