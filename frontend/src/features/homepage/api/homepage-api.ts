@@ -46,6 +46,6 @@ export const homepageApi = {
    * Returns void (204 No Content from backend).
    */
   dismissSuggestion(workspaceId: string, payload: DigestDismissPayload): Promise<void> {
-    return apiClient.post(`/workspaces/${workspaceId}/homepage/dismiss`, payload);
+    return apiClient.post(`/workspaces/${workspaceId}/homepage/digest/dismiss`, payload);
   },
 };

@@ -84,9 +84,19 @@ export interface ActivityMeta {
   hasMore: boolean;
 }
 
+/**
+ * Typed structure for the three day-groups returned by GET /homepage/activity.
+ * Backend serializes `this_week` → `thisWeek` via BaseSchema to_camel alias.
+ */
+export interface HomepageActivityData {
+  today: ActivityCard[];
+  yesterday: ActivityCard[];
+  thisWeek: ActivityCard[];
+}
+
 /** GET /homepage/activity response */
 export interface HomepageActivityResponse {
-  data: Record<string, ActivityCard[]>;
+  data: HomepageActivityData;
   meta: ActivityMeta;
 }
 
@@ -147,4 +157,53 @@ export interface DigestDismissPayload {
   entityId: string | null;
   entityType: string | null;
   category: string;
+}
+
+// ---------------------------------------------------------------------------
+// SDLC Context Bridge Types
+// ---------------------------------------------------------------------------
+
+/** Branch status summary for homepage dev object display */
+export interface BranchStatusBrief {
+  name: string;
+  lastPushAt: string | null;
+  aheadBy: number;
+  behindBy: number;
+}
+
+/** Pull request status summary for homepage dev object display */
+export interface PRStatusBrief {
+  number: number;
+  title: string;
+  state: 'open' | 'merged' | 'closed';
+  isDraft: boolean;
+  reviewRequired: boolean;
+  url: string;
+}
+
+/** Aggregated dev object status for a single issue */
+export interface DevObjectStatus {
+  issueId: string;
+  branches: BranchStatusBrief[];
+  pullRequests: PRStatusBrief[];
+  latestCommitAt: string | null;
+  hasActivity: boolean;
+}
+
+/** Stale issue information for alerts */
+export interface StaleIssueInfo {
+  issueId: string;
+  identifier: string;
+  title: string;
+  daysSinceLastCommit: number;
+}
+
+/** SDLC suggestion card data for AI insights section */
+export interface SuggestionCardData {
+  id: string;
+  type: 'sprint_completion' | 'stale_alert' | 'actionable_suggestion';
+  title: string;
+  description: string;
+  actionLabel?: string;
+  severity: 'info' | 'warning' | 'critical';
 }

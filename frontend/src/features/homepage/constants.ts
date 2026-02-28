@@ -41,3 +41,16 @@ export const DIGEST_REFETCH_INTERVAL = 300_000;
 
 /** Maximum suggestions to show per category before "show more" */
 export const MAX_SUGGESTIONS_VISIBLE = 5;
+
+// ---------------------------------------------------------------------------
+// SDLC Context Bridge
+// ---------------------------------------------------------------------------
+
+/** Number of days without a commit before an in-progress issue is flagged as stale */
+export const STALE_THRESHOLD_DAYS = 3;
+
+/** Number of data points to display in the sprint sparkline */
+export const SPARKLINE_POINT_COUNT = 8;
+
+/** TanStack Query stale time for dev object (integration link) queries (60s) */
+export const DEV_OBJECT_STALE_TIME = 60_000;

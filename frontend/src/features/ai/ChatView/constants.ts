@@ -102,6 +102,30 @@ export const FALLBACK_SKILLS: SkillDefinition[] = [
     icon: 'CalendarCheck',
     examples: ['Generate my daily standup', 'What did I work on yesterday?'],
   },
+  {
+    name: 'vibe-check',
+    description: 'Compare notes vs in-progress issues for alignment gaps',
+    category: 'planning',
+    icon: 'Eye',
+    examples: [
+      'Check alignment between notes and issues',
+      'Are my notes aligned with active work?',
+    ],
+  },
+  {
+    name: 'standup',
+    description: 'Aggregate Working On + Recent Notes into formatted update',
+    category: 'planning',
+    icon: 'Megaphone',
+    examples: ['Generate my standup update', 'Summarize today for standup'],
+  },
+  {
+    name: 'scaffold',
+    description: 'Generate structured issue description from selected note',
+    category: 'issues',
+    icon: 'Layers',
+    examples: ['Scaffold an issue from this note', 'Create issue structure from note content'],
+  },
 ];
 
 /**

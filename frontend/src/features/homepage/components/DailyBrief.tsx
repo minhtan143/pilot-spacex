@@ -7,7 +7,7 @@
  * Uses React components styled with prose classes for full interactivity
  * (clickable notes, issues, projects) without TipTap overhead.
  *
- * Sections: Greeting, Recent Notes, Working On, AI Insights, Projects.
+ * Sections: Greeting, Recent Notes, Working On, AI Insights (SDLC), Projects.
  */
 
 import { useState, useMemo, useCallback } from 'react';
@@ -16,7 +16,6 @@ import { observer } from 'mobx-react-lite';
 import { format } from 'date-fns';
 import {
   FileText,
-  Pin,
   ChevronDown,
   ChevronRight,
   Sparkles,
@@ -24,26 +23,37 @@ import {
   CircleDot,
   CalendarCheck,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { abbreviatedTimeAgo } from '@/lib/format-utils';
 import { getIssueStateKey } from '@/lib/issue-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useAuthStore, useWorkspaceStore, useOnboardingStore } from '@/stores/RootStore';
+import { useAuthStore, useWorkspaceStore } from '@/stores/RootStore';
 import { getAIStore } from '@/stores/ai/AIStore';
-import {
-  useOnboardingState,
-  selectCompletionPercentage,
-} from '@/features/onboarding/hooks/useOnboardingState';
 import { useHomepageActivity } from '../hooks/useHomepageActivity';
 import { useWorkspaceDigest } from '../hooks/useWorkspaceDigest';
+import { useIssueDevObjects } from '../hooks/useIssueDevObjects';
+import { useActiveCycleMetrics } from '../hooks/useActiveCycleMetrics';
+import { useStaleIssueDetection } from '../hooks/useStaleIssueDetection';
 import { DigestInsights } from './DigestInsights';
+import {
+  SectionDivider,
+  NoteEntry,
+  IssueEntry,
+  ProjectEntry,
+  NoteSkeleton,
+  IssueSkeleton,
+  OnboardingBanner,
+} from './BriefEntries';
+import { NoteContextBadge } from './NoteContextBadge';
+import { DevObjectIndicators } from './DevObjectIndicators';
+import { IssueDetailSheet } from './IssueDetailSheet';
+import { SprintSparkline } from './SprintSparkline';
+import { StaleLogicAlert } from './StaleLogicAlert';
+import { SDLCSuggestionCards } from './SDLCSuggestionCards';
 import { useQuery } from '@tanstack/react-query';
 import { issuesApi } from '@/services/api/issues';
 import { projectsApi } from '@/services/api/projects';
-import type { ActivityCardNote } from '../types';
+import type { ActivityCardNote, SuggestionCardData } from '../types';
 import type { Issue, Project } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -53,16 +63,6 @@ import type { Issue, Project } from '@/types';
 const MAX_NOTES = 5;
 const MAX_ISSUES_COLLAPSED = 5;
 const MAX_ISSUES_TOTAL = 20;
-
-/** State key to display color and human-readable label */
-const STATE_COLORS: Record<string, { dot: string; label: string }> = {
-  backlog: { dot: 'bg-[var(--color-state-backlog)]', label: 'Backlog' },
-  todo: { dot: 'bg-[var(--color-state-todo)]', label: 'Todo' },
-  in_progress: { dot: 'bg-[var(--color-state-in-progress)]', label: 'In Progress' },
-  in_review: { dot: 'bg-[var(--color-state-in-review)]', label: 'In Review' },
-  done: { dot: 'bg-[var(--color-state-done)]', label: 'Done' },
-  cancelled: { dot: 'bg-[var(--color-state-cancelled)]', label: 'Cancelled' },
-};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -75,182 +75,39 @@ function getGreeting(): string {
   return 'Good evening';
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
+/**
+ * Build SDLC suggestion cards from stale issues and cycle metrics.
+ * Pure computation — no API calls.
+ */
+/**
+ * Build SDLC suggestion cards from cycle metrics only.
+ *
+ * C2 fix: stale issues are shown exclusively via StaleLogicAlert (with per-issue
+ * detail). Adding a stale_alert here would duplicate that warning in the same
+ * section.
+ */
+function buildSuggestionCards(
+  completionPct: number | null,
+  cycleName: string | null
+): SuggestionCardData[] {
+  const cards: SuggestionCardData[] = [];
 
-function SectionDivider() {
-  return <hr className="my-6 border-border" />;
-}
+  if (cycleName && completionPct !== null) {
+    cards.push({
+      id: 'sprint-completion',
+      type: 'sprint_completion',
+      title: `${cycleName}: ${completionPct}% complete`,
+      description:
+        completionPct >= 80
+          ? 'Sprint is on track for completion.'
+          : completionPct >= 50
+            ? 'Sprint is progressing. Review remaining items.'
+            : 'Sprint needs attention. Consider scope adjustment.',
+      severity: completionPct >= 80 ? 'info' : completionPct >= 50 ? 'warning' : 'critical',
+    });
+  }
 
-/** Compact note row for tight table-style list */
-function NoteEntry({
-  note,
-  onClick,
-  isLast,
-}: {
-  note: ActivityCardNote;
-  onClick: () => void;
-  isLast: boolean;
-}) {
-  const timeAgo = abbreviatedTimeAgo(note.updatedAt);
-  const isEmpty = !note.wordCount || note.wordCount === 0;
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center gap-2 px-3 py-2 text-left',
-        'min-h-[36px] sm:min-h-0 sm:h-9',
-        'motion-safe:transition-colors motion-safe:duration-100',
-        'hover:bg-muted/50',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-        !isLast && 'border-b border-border/50'
-      )}
-    >
-      <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" aria-hidden="true" />
-      <span
-        className={cn(
-          'min-w-0 flex-1 truncate text-[13px]',
-          isEmpty ? 'italic text-muted-foreground' : 'text-foreground'
-        )}
-      >
-        {note.title || 'Untitled'}
-      </span>
-      {note.isPinned && <Pin className="h-3 w-3 shrink-0 text-primary/60" aria-label="Pinned" />}
-      {note.project && (
-        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-          {note.project.identifier}
-        </span>
-      )}
-      <span className="w-7 shrink-0 text-right tabular-nums text-[11px] text-muted-foreground/70">
-        {timeAgo}
-      </span>
-    </button>
-  );
-}
-
-/** Task-list style issue row with state dot and badge */
-function IssueEntry({ issue, onClick }: { issue: Issue; onClick: () => void }) {
-  const stateKey = getIssueStateKey(issue.state);
-  const fallback = { dot: 'bg-muted-foreground/40', label: 'Backlog' };
-  const stateInfo = STATE_COLORS[stateKey] ?? fallback;
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left',
-        'min-h-[44px]',
-        'motion-safe:transition-colors motion-safe:duration-100',
-        'hover:bg-muted/40',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1'
-      )}
-    >
-      <span className={cn('h-2 w-2 shrink-0 rounded-full', stateInfo.dot)} aria-hidden="true" />
-      <span className="shrink-0 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
-      <span className="min-w-0 flex-1 truncate text-sm text-foreground">{issue.name}</span>
-      <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-xs">
-        {stateInfo.label}
-      </Badge>
-    </button>
-  );
-}
-
-/** Project row with progress bar */
-function ProjectEntry({ project, onClick }: { project: Project; onClick: () => void }) {
-  const total = project.issueCount ?? 0;
-  const done = project.completedIssueCount ?? 0;
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center gap-3 rounded-md px-3 py-2 text-left',
-        'min-h-[44px]',
-        'motion-safe:transition-colors motion-safe:duration-100',
-        'hover:bg-muted/40',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1'
-      )}
-    >
-      <span className="min-w-[80px] max-w-[140px] shrink-0 truncate text-xs font-medium text-foreground">
-        {project.name}
-      </span>
-      <Progress value={pct} className="h-1.5 flex-1" />
-      <span className="w-16 shrink-0 text-right tabular-nums text-xs text-muted-foreground">
-        {done}/{total}
-      </span>
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Section Skeletons
-// ---------------------------------------------------------------------------
-
-function NoteSkeleton() {
-  return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      {[1, 2, 3].map((i) => (
-        <div
-          key={i}
-          className={cn(
-            'h-9 motion-safe:animate-pulse bg-muted/30',
-            i < 3 && 'border-b border-border/50'
-          )}
-        />
-      ))}
-    </div>
-  );
-}
-
-/** Inline onboarding progress banner shown below greeting */
-const OnboardingBanner = observer(function OnboardingBanner({
-  workspaceId,
-}: {
-  workspaceId: string;
-}) {
-  const onboardingStore = useOnboardingStore();
-  const { data } = useOnboardingState({ workspaceId });
-
-  if (!data || data.dismissedAt || data.completedAt) return null;
-
-  const percentage = selectCompletionPercentage(data);
-
-  return (
-    <button
-      type="button"
-      onClick={() => onboardingStore.openModal()}
-      className={cn(
-        'mb-6 flex w-full items-center gap-3 rounded-lg px-4 py-3',
-        'border border-primary/20 bg-primary/5',
-        'text-left text-sm font-medium text-foreground',
-        'motion-safe:transition-all motion-safe:duration-200',
-        'hover:border-primary/40 hover:bg-primary/10 hover:shadow-sm',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-      )}
-    >
-      <Sparkles className="h-4 w-4 shrink-0 text-primary" />
-      <span className="flex-1">Continue workspace setup</span>
-      <Progress value={percentage} className="h-1.5 w-20" />
-      <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{percentage}%</span>
-      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-    </button>
-  );
-});
-
-function IssueSkeleton() {
-  return (
-    <div className="space-y-1.5">
-      {[1, 2, 3].map((i) => (
-        <div key={i} className="h-10 motion-safe:animate-pulse rounded-md bg-muted/30" />
-      ))}
-    </div>
-  );
+  return cards;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +125,7 @@ export const DailyBrief = observer(function DailyBrief({ workspaceSlug }: DailyB
   const workspaceId = workspaceStore.currentWorkspace?.id ?? '';
 
   const [issuesExpanded, setIssuesExpanded] = useState(false);
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
 
   const firstName = authStore.userDisplayName?.split(' ')[0] ?? '';
   const todayFormatted = format(new Date(), 'EEEE, MMMM d, yyyy');
@@ -278,12 +136,12 @@ export const DailyBrief = observer(function DailyBrief({ workspaceSlug }: DailyB
     workspaceId,
   });
 
-  // Client-side state filtering: the backend accepts a `state` query param but
-  // does not forward it to the service layer (ListIssuesPayload). Until the
-  // backend wires the param through, we fetch 20 items and filter locally.
+  // W6: Fetch 50 issues to reduce risk of missing active ones due to in-memory state
+  // filtering. Backend `state` filter accepts one value; we filter in_progress+in_review
+  // client-side, so we need a large enough page to capture both states.
   const { data: issueData, isLoading: issuesLoading } = useQuery({
     queryKey: ['homepage', 'active-issues', workspaceId],
-    queryFn: () => issuesApi.list(workspaceId, {}, 1, 20),
+    queryFn: () => issuesApi.list(workspaceId, {}, 1, 50),
     enabled: !!workspaceId,
     staleTime: 30_000,
   });
@@ -324,24 +182,57 @@ export const DailyBrief = observer(function DailyBrief({ workspaceSlug }: DailyB
       .slice(0, MAX_ISSUES_TOTAL);
   }, [issueData]);
 
-  const visibleIssues = issuesExpanded ? activeIssues : activeIssues.slice(0, MAX_ISSUES_COLLAPSED);
-
+  // W4: Memoize visibleIssues — slice() creates a new array reference each render,
+  // causing downstream memos (visibleIssueIds, devObjects) to recompute unnecessarily.
+  const visibleIssues = useMemo(
+    () => (issuesExpanded ? activeIssues : activeIssues.slice(0, MAX_ISSUES_COLLAPSED)),
+    [activeIssues, issuesExpanded]
+  );
   const hiddenCount = Math.max(0, activeIssues.length - MAX_ISSUES_COLLAPSED);
+  const projects = useMemo(() => projectData?.items ?? [], [projectData]);
+  const projectIds = useMemo(() => projects.map((p: Project) => p.id), [projects]);
 
-  const projects = projectData?.items ?? [];
+  // --- SDLC Context Bridge hooks ---
+
+  // C3: Fetch dev objects for ALL active issues (not just visible ones) so that
+  // stale detection covers hidden issues too. useIssueDevObjects caches per-issue
+  // at DEV_OBJECT_STALE_TIME (60s), so expanding the list reuses cached results.
+  const activeIssueIds = useMemo(() => activeIssues.map((i: Issue) => i.id), [activeIssues]);
+
+  const { devObjects, isLoading: devObjectsLoading } = useIssueDevObjects({
+    workspaceId,
+    issueIds: activeIssueIds,
+    enabled: activeIssueIds.length > 0,
+  });
+
+  const {
+    activeCycle,
+    velocityData,
+    averageVelocity,
+    isLoading: metricsLoading,
+  } = useActiveCycleMetrics({
+    workspaceId,
+    projectIds,
+    enabled: projectIds.length > 0,
+  });
+
+  const staleIssues = useStaleIssueDetection({
+    activeIssues,
+    devObjects,
+  });
+
+  const suggestionCards = useMemo(() => {
+    const total = activeCycle?.metrics?.totalIssues ?? 0;
+    const completed = activeCycle?.metrics?.completedIssues ?? 0;
+    const pct = total > 0 ? Math.round((completed / total) * 100) : null;
+    return buildSuggestionCards(pct, activeCycle?.name ?? null);
+  }, [activeCycle]);
 
   // --- Navigation ---
 
   const navigateToNote = useCallback(
     (noteId: string) => {
       router.push(`/${workspaceSlug}/notes/${noteId}`);
-    },
-    [router, workspaceSlug]
-  );
-
-  const navigateToIssue = useCallback(
-    (issueId: string) => {
-      router.push(`/${workspaceSlug}/issues/${issueId}`);
     },
     [router, workspaceSlug]
   );
@@ -414,7 +305,7 @@ export const DailyBrief = observer(function DailyBrief({ workspaceSlug }: DailyB
           </p>
         ) : (
           <div
-            className="overflow-hidden rounded-lg border border-border"
+            className="overflow-hidden rounded-lg border border-gray-100"
             role="list"
             aria-label="Recent notes"
           >
@@ -424,6 +315,7 @@ export const DailyBrief = observer(function DailyBrief({ workspaceSlug }: DailyB
                 note={note}
                 onClick={() => navigateToNote(note.id)}
                 isLast={idx === notes.length - 1}
+                badge={<NoteContextBadge note={note} projects={projects} />}
               />
             ))}
           </div>
@@ -461,7 +353,14 @@ export const DailyBrief = observer(function DailyBrief({ workspaceSlug }: DailyB
                 <IssueEntry
                   key={issue.id}
                   issue={issue}
-                  onClick={() => navigateToIssue(issue.id)}
+                  onClick={() => setSelectedIssueId(issue.id)}
+                  trailing={
+                    <DevObjectIndicators
+                      devObjects={devObjects.get(issue.id)}
+                      issueId={issue.id}
+                      isLoading={devObjectsLoading}
+                    />
+                  }
                 />
               ))}
             </div>
@@ -493,7 +392,7 @@ export const DailyBrief = observer(function DailyBrief({ workspaceSlug }: DailyB
       <SectionDivider />
 
       {/* ---------------------------------------------------------------- */}
-      {/* AI Insights */}
+      {/* AI Insights + SDLC Intelligence */}
       {/* ---------------------------------------------------------------- */}
       <section aria-label="AI insights">
         <div className="mb-3 flex items-center gap-2">
@@ -506,7 +405,22 @@ export const DailyBrief = observer(function DailyBrief({ workspaceSlug }: DailyB
               {digest.suggestionCount}
             </Badge>
           )}
+          {/* Sprint sparkline */}
+          <span className="ml-auto">
+            <SprintSparkline
+              velocityData={velocityData}
+              averageVelocity={averageVelocity}
+              activeCycle={activeCycle}
+              isLoading={metricsLoading}
+            />
+          </span>
         </div>
+
+        {/* Stale issue alert */}
+        <StaleLogicAlert staleIssues={staleIssues} className="mb-3" />
+
+        {/* SDLC suggestion cards */}
+        <SDLCSuggestionCards suggestions={suggestionCards} className="mb-3" />
 
         <DigestInsights
           groups={digest.groups}
@@ -553,6 +467,14 @@ export const DailyBrief = observer(function DailyBrief({ workspaceSlug }: DailyB
           )}
         </section>
       )}
+
+      {/* Issue Detail Sheet */}
+      <IssueDetailSheet
+        issueId={selectedIssueId}
+        workspaceId={workspaceId}
+        workspaceSlug={workspaceSlug}
+        onClose={() => setSelectedIssueId(null)}
+      />
     </article>
   );
 });

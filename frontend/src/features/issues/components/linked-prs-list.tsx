@@ -56,7 +56,11 @@ export function LinkedPRsList({ links, className }: LinkedPRsListProps) {
         return (
           <li key={link.id}>
             <a
-              href={link.externalUrl}
+              href={
+                link.externalUrl?.startsWith('https://') || link.externalUrl?.startsWith('http://')
+                  ? link.externalUrl
+                  : '#'
+              }
               target="_blank"
               rel="noopener noreferrer"
               className={cn(

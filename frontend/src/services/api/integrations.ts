@@ -130,7 +130,7 @@ interface IntegrationLinkRaw {
   integration_id: string;
   link_type: 'commit' | 'pull_request' | 'branch' | 'mention';
   external_id: string;
-  external_url: string;
+  external_url: string | null;
   title: string | null;
   author_name: string | null;
   author_avatar_url: string | null;
@@ -319,6 +319,11 @@ export const integrationsApi = {
           const isPR = raw.link_type === 'pull_request';
           const prMeta = isPR ? (raw.metadata as PRLinkMetadata | undefined | null) : null;
 
+          const isCommit = raw.link_type === 'commit';
+          const commitMeta = isCommit
+            ? (raw.metadata as CommitLinkMetadata | undefined | null)
+            : null;
+
           return {
             id: raw.id,
             issueId: raw.issue_id,
@@ -329,7 +334,7 @@ export const integrationsApi = {
                 ? 'github_commit'
                 : 'github_issue',
             externalId: raw.external_id,
-            externalUrl: raw.external_url,
+            externalUrl: raw.external_url ?? '',
             link_type: raw.link_type,
             title: raw.title ?? undefined,
             authorName: raw.author_name ?? undefined,
@@ -341,6 +346,8 @@ export const integrationsApi = {
               (raw.external_id ? parseInt(raw.external_id, 10) || undefined : undefined),
             prTitle: isPR ? (raw.title ?? undefined) : undefined,
             prStatus: mapPRStatus(prMeta?.state),
+            // Commit timestamp from metadata (used by stale issue detection).
+            commitTimestamp: commitMeta?.timestamp ?? undefined,
           };
         })
       );

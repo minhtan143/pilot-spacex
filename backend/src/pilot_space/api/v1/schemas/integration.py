@@ -118,10 +118,13 @@ class IntegrationLinkResponse(BaseModel):
     title: str | None
     author_name: str | None
     author_avatar_url: str | None
-    metadata: dict[str, Any] | None
+    # ORM attribute is `link_metadata` (DB column alias), not `metadata`.
+    # validation_alias reads the correct ORM attribute; serialization keeps
+    # the `metadata` key that the frontend IntegrationLinkRaw expects.
+    metadata: dict[str, Any] | None = Field(default=None, validation_alias="link_metadata")
     created_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class IntegrationLinksResponse(BaseModel):

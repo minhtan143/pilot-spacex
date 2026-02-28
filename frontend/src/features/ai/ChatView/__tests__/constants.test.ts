@@ -25,6 +25,34 @@ describe('ChatView constants', () => {
       expect(dailyStandup!.examples!.length).toBeGreaterThan(0);
     });
 
+    it('should contain vibe-check skill', () => {
+      const skill = FALLBACK_SKILLS.find((s) => s.name === 'vibe-check');
+      expect(skill).toBeDefined();
+      expect(skill!.description).toContain('alignment');
+      expect(skill!.category).toBe('planning');
+      expect(skill!.icon).toBeTruthy();
+      expect(skill!.examples!.length).toBeGreaterThan(0);
+    });
+
+    it('should contain standup skill (distinct from daily-standup)', () => {
+      const standup = FALLBACK_SKILLS.find((s) => s.name === 'standup');
+      const dailyStandup = FALLBACK_SKILLS.find((s) => s.name === 'daily-standup');
+      expect(standup).toBeDefined();
+      expect(dailyStandup).toBeDefined();
+      expect(standup!.name).not.toBe(dailyStandup!.name);
+      expect(standup!.description).toContain('Aggregate');
+      expect(standup!.category).toBe('planning');
+    });
+
+    it('should contain scaffold skill', () => {
+      const skill = FALLBACK_SKILLS.find((s) => s.name === 'scaffold');
+      expect(skill).toBeDefined();
+      expect(skill!.description).toContain('issue description');
+      expect(skill!.category).toBe('issues');
+      expect(skill!.icon).toBeTruthy();
+      expect(skill!.examples!.length).toBeGreaterThan(0);
+    });
+
     it('should have unique skill names', () => {
       const names = FALLBACK_SKILLS.map((s) => s.name);
       expect(new Set(names).size).toBe(names.length);

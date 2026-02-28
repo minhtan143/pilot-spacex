@@ -15,14 +15,47 @@ export type {
   IssuePriority,
   DayGroup,
   ActivityMeta,
+  HomepageActivityData,
   HomepageActivityResponse,
+  BranchStatusBrief,
+  PRStatusBrief,
+  DevObjectStatus,
+  StaleIssueInfo,
+  SuggestionCardData,
 } from './types';
 
 // API client
 export { homepageApi } from './api/homepage-api';
 
 // Constants
-export { ITEMS_PER_PAGE, ACTIVITY_STALE_TIME } from './constants';
+export {
+  ITEMS_PER_PAGE,
+  ACTIVITY_STALE_TIME,
+  STALE_THRESHOLD_DAYS,
+  SPARKLINE_POINT_COUNT,
+  DEV_OBJECT_STALE_TIME,
+} from './constants';
 
 // Components
 export { HomepageHub } from './components/HomepageHub';
+export {
+  SectionDivider,
+  NoteEntry,
+  IssueEntry,
+  ProjectEntry,
+  NoteSkeleton,
+  IssueSkeleton,
+  OnboardingBanner,
+  STATE_COLORS,
+} from './components/BriefEntries';
+export { IssueDetailSheet } from './components/IssueDetailSheet';
+export { NoteContextBadge } from './components/NoteContextBadge';
+export { DevObjectIndicators } from './components/DevObjectIndicators';
+export { SprintSparkline } from './components/SprintSparkline';
+export { StaleLogicAlert } from './components/StaleLogicAlert';
+export { SDLCSuggestionCards } from './components/SDLCSuggestionCards';
+
+// Hooks
+export { useIssueDevObjects } from './hooks/useIssueDevObjects';
+export { useActiveCycleMetrics } from './hooks/useActiveCycleMetrics';
+export { useStaleIssueDetection, detectStaleIssues } from './hooks/useStaleIssueDetection';

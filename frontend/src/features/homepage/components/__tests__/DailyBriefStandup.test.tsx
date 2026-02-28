@@ -54,6 +54,49 @@ vi.mock('../DigestInsights', () => ({
   DigestInsights: () => React.createElement('div', { 'data-testid': 'digest-insights' }),
 }));
 
+// Mock new SDLC Context Bridge hooks
+vi.mock('../../hooks/useIssueDevObjects', () => ({
+  useIssueDevObjects: () => ({ devObjects: new Map(), isLoading: false }),
+}));
+
+vi.mock('../../hooks/useActiveCycleMetrics', () => ({
+  useActiveCycleMetrics: () => ({
+    activeCycle: null,
+    velocityData: [],
+    averageVelocity: 0,
+    isLoading: false,
+  }),
+}));
+
+vi.mock('../../hooks/useStaleIssueDetection', () => ({
+  useStaleIssueDetection: () => [],
+}));
+
+// Mock new SDLC Context Bridge components
+vi.mock('../NoteContextBadge', () => ({
+  NoteContextBadge: () => null,
+}));
+
+vi.mock('../DevObjectIndicators', () => ({
+  DevObjectIndicators: () => null,
+}));
+
+vi.mock('../IssueDetailSheet', () => ({
+  IssueDetailSheet: () => null,
+}));
+
+vi.mock('../SprintSparkline', () => ({
+  SprintSparkline: () => null,
+}));
+
+vi.mock('../StaleLogicAlert', () => ({
+  StaleLogicAlert: () => null,
+}));
+
+vi.mock('../SDLCSuggestionCards', () => ({
+  SDLCSuggestionCards: () => null,
+}));
+
 // Mock TanStack Query
 vi.mock('@tanstack/react-query', () => ({
   useQuery: () => ({ data: null, isLoading: false }),

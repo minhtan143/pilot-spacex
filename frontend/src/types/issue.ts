@@ -151,6 +151,8 @@ export interface IntegrationLink {
   title?: string;
   authorName?: string;
   authorAvatarUrl?: string | null;
+  /** ISO timestamp of the commit. Only present when link_type === 'commit'. */
+  commitTimestamp?: string;
 }
 
 // Note Issue Link (frontend-only, for future backend support)

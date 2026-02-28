@@ -58,7 +58,7 @@ export const cyclesApi = {
     if (filters.search) params.search = filters.search;
     if (filters.includeMetrics) params.include_metrics = 'true';
     if (options.cursor) params.cursor = options.cursor;
-    if (options.pageSize) params.page_size = String(options.pageSize);
+    if (options.pageSize) params.pageSize = String(options.pageSize);
     if (options.sortBy) params.sort_by = options.sortBy;
     if (options.sortOrder) params.sort_order = options.sortOrder;
 
