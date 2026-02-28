@@ -42,8 +42,8 @@ function makeApproval(overrides?: Partial<ApprovalRequest>): ApprovalRequest {
     actionType: 'add_label',
     status: 'pending',
     contextPreview: 'Add "bug" label to issue PS-42',
-    createdAt: new Date('2026-01-01'),
-    expiresAt: new Date('2026-01-02'),
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 86400000), // 24h in the future
     ...overrides,
   };
 }
@@ -87,8 +87,34 @@ describe('InlineApprovalCard', () => {
       expect(screen.getByText('Add "bug" label to issue PS-42')).toBeInTheDocument();
     });
 
-    it('renders an "AI Suggestion" badge', () => {
+    it('renders an action-specific badge for known action types', () => {
       render(
+        <InlineApprovalCard
+          approval={makeApproval({ actionType: 'add_label' })}
+          onApprove={mockOnApprove}
+          onReject={mockOnReject}
+        />
+      );
+
+      // add_label maps to "Add Label" badge
+      expect(screen.getByText('Add Label')).toBeInTheDocument();
+    });
+
+    it('renders formatted action type badge for unknown action types', () => {
+      render(
+        <InlineApprovalCard
+          approval={makeApproval({ actionType: 'custom_action' })}
+          onApprove={mockOnApprove}
+          onReject={mockOnReject}
+        />
+      );
+
+      // Unknown action type is formatted to title case
+      expect(screen.getByText('Custom Action')).toBeInTheDocument();
+    });
+
+    it('renders an expiry countdown badge', () => {
+      const { container } = render(
         <InlineApprovalCard
           approval={makeApproval()}
           onApprove={mockOnApprove}
@@ -96,7 +122,9 @@ describe('InlineApprovalCard', () => {
         />
       );
 
-      expect(screen.getByText('AI Suggestion')).toBeInTheDocument();
+      // Countdown badge has aria-live="polite" and tabular-nums class
+      const countdownEl = container.querySelector('[aria-live="polite"]');
+      expect(countdownEl).toBeInTheDocument();
     });
 
     it('renders both Approve and Reject buttons', () => {

@@ -37,6 +37,8 @@ interface DestructiveApprovalModalProps {
   onApprove: (id: string, modifications?: Record<string, unknown>) => Promise<void>;
   onReject: (id: string, reason: string) => Promise<void>;
   onClose: () => void;
+  /** Total number of destructive approvals queued — shows "1 of N" when > 1 */
+  totalCount?: number;
 }
 
 function formatActionType(actionType: string): string {
@@ -44,7 +46,7 @@ function formatActionType(actionType: string): string {
 }
 
 export const DestructiveApprovalModal = memo<DestructiveApprovalModalProps>(
-  ({ approval, isOpen, onApprove, onReject, onClose }) => {
+  ({ approval, isOpen, onApprove, onReject, onClose, totalCount }) => {
     // Key-based reset: inner component re-mounts when approval.id changes,
     // resetting all state without needing refs during render.
     if (!approval) return null;
@@ -57,6 +59,7 @@ export const DestructiveApprovalModal = memo<DestructiveApprovalModalProps>(
         onApprove={onApprove}
         onReject={onReject}
         onClose={onClose}
+        totalCount={totalCount}
       />
     );
   }
@@ -69,7 +72,7 @@ DestructiveApprovalModal.displayName = 'DestructiveApprovalModal';
  */
 const DestructiveApprovalModalInner = memo<
   Omit<DestructiveApprovalModalProps, 'approval'> & { approval: ApprovalRequest }
->(({ approval, isOpen, onApprove, onReject, onClose }) => {
+>(({ approval, isOpen, onApprove, onReject, onClose, totalCount }) => {
   const [modalState, setModalState] = useState<ModalState>('default');
   const [rejectionReason, setRejectionReason] = useState('');
   const [timeRemaining, setTimeRemaining] = useState(() =>
@@ -187,22 +190,32 @@ const DestructiveApprovalModalInner = memo<
                 </div>
               </div>
 
-              <Badge
-                variant="outline"
-                className={cn(
-                  'shrink-0 gap-1.5 tabular-nums transition-colors duration-300',
-                  isUrgent
-                    ? 'border-destructive/50 text-destructive animate-pulse'
-                    : 'border-orange-500/50 text-orange-600 dark:text-orange-400'
+              <div className="flex items-center gap-2 shrink-0">
+                {totalCount !== undefined && totalCount > 1 && (
+                  <Badge
+                    variant="outline"
+                    className="border-destructive/30 text-destructive/70 text-xs"
+                  >
+                    1 of {totalCount}
+                  </Badge>
                 )}
-                aria-live="polite"
-                aria-label={`${minutes} minutes and ${seconds} seconds remaining`}
-              >
-                <Clock className="h-3 w-3" aria-hidden="true" />
-                <span>
-                  {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
-                </span>
-              </Badge>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    'gap-1.5 tabular-nums transition-colors duration-300',
+                    isUrgent
+                      ? 'border-destructive/50 text-destructive animate-pulse'
+                      : 'border-orange-500/50 text-orange-600 dark:text-orange-400'
+                  )}
+                  aria-live="polite"
+                  aria-label={`${minutes} minutes and ${seconds} seconds remaining`}
+                >
+                  <Clock className="h-3 w-3" aria-hidden="true" />
+                  <span>
+                    {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+                  </span>
+                </Badge>
+              </div>
             </div>
           </DialogHeader>
         </div>
