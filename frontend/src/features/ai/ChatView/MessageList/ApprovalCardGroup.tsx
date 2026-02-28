@@ -25,20 +25,31 @@ export const ApprovalCardGroup = memo<ApprovalCardGroupProps>(function ApprovalC
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isBatchLoading, setIsBatchLoading] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
 
   const handleApproveAll = useCallback(async () => {
+    setBatchError(null);
     setIsBatchLoading(true);
     try {
-      await Promise.all(approvals.map((a) => onApprove(a.id)));
+      const results = await Promise.allSettled(approvals.map((a) => onApprove(a.id)));
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0)
+        setBatchError(`${failed} approval${failed === 1 ? '' : 's'} failed to process`);
     } finally {
       setIsBatchLoading(false);
     }
   }, [approvals, onApprove]);
 
   const handleRejectAll = useCallback(async () => {
+    setBatchError(null);
     setIsBatchLoading(true);
     try {
-      await Promise.all(approvals.map((a) => onReject(a.id, 'Batch rejected')));
+      const results = await Promise.allSettled(
+        approvals.map((a) => onReject(a.id, 'Batch rejected'))
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0)
+        setBatchError(`${failed} rejection${failed === 1 ? '' : 's'} failed to process`);
     } finally {
       setIsBatchLoading(false);
     }
@@ -101,6 +112,15 @@ export const ApprovalCardGroup = memo<ApprovalCardGroupProps>(function ApprovalC
           </Button>
         </div>
       </div>
+
+      {/* Batch error feedback */}
+      {batchError && (
+        <div className="px-4 py-2 border-b border-ai/10">
+          <p role="alert" className="text-xs text-destructive">
+            {batchError}
+          </p>
+        </div>
+      )}
 
       {/* Cards list */}
       {isExpanded && (

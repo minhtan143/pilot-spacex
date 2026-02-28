@@ -303,9 +303,9 @@ async def resolve_approval(
                 session,
             )
             result["action_result"] = action_result
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to execute approved action")
-            result["action_error"] = str(e)
+            result["action_error"] = "Action execution failed. Please try again."
 
     return ApprovalResolutionResponse(**result)
 
