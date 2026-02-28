@@ -120,7 +120,8 @@ export const InlineApprovalCard = memo<InlineApprovalCardProps>(function InlineA
 
   // Countdown timer with auto-expire
   useEffect(() => {
-    if (state === 'approved' || state === 'rejected' || state === 'expired') return;
+    if (state === 'approved' || state === 'rejected' || state === 'expired' || state === 'loading')
+      return;
 
     const computeRemaining = () =>
       Math.max(0, Math.floor((approval.expiresAt.getTime() - Date.now()) / 1000));
