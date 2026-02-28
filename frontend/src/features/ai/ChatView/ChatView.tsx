@@ -39,6 +39,7 @@ import { TaskPanel } from './TaskPanel/TaskPanel';
 import { DestructiveApprovalModal } from './ApprovalOverlay/DestructiveApprovalModal';
 import { ChatInput } from './ChatInput/ChatInput';
 import { InlineApprovalCard } from './MessageList/InlineApprovalCard';
+import { ApprovalCardGroup } from './MessageList/ApprovalCardGroup';
 import { WaitingIndicator } from './WaitingIndicator';
 import { ChatViewErrorBoundary } from './ChatViewErrorBoundary';
 import { IntentMessageRenderer } from './MessageList/IntentMessageRenderer';
@@ -508,15 +509,31 @@ const ChatViewInternal = observer<ChatViewProps>(
           )}
         </div>
 
-        {/* Inline approval cards for non-destructive approvals */}
-        {inlineApprovals.map((approval) => (
-          <InlineApprovalCard
-            key={approval.id}
-            approval={approval}
+        {/* Inline approval cards — batch group for 3+, animated list otherwise */}
+        {inlineApprovals.length >= 3 ? (
+          <ApprovalCardGroup
+            approvals={inlineApprovals}
             onApprove={handleApproveAction}
             onReject={handleRejectAction}
           />
-        ))}
+        ) : (
+          <AnimatePresence mode="popLayout">
+            {inlineApprovals.map((approval) => (
+              <motion.div
+                key={approval.id}
+                layout
+                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.97 }}
+                transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}
+              >
+                <InlineApprovalCard
+                  approval={approval}
+                  onApprove={handleApproveAction}
+                  onReject={handleRejectAction}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        )}
 
         {/* Waiting indicator — shown when agent is blocked on user input */}
         {store.isWaitingForUser && (
@@ -579,7 +596,15 @@ const ChatViewInternal = observer<ChatViewProps>(
           onApprove={handleApproveAction}
           onReject={handleRejectAction}
           onClose={() => setDestructiveModalOpen(false)}
+          totalCount={modalApprovals.length}
         />
+
+        {/* Screen reader announcement region for new approvals (P2 aria-live) */}
+        <div aria-live="polite" aria-atomic="true" className="sr-only">
+          {inlineApprovals.length > 0
+            ? `${inlineApprovals.length} pending approval${inlineApprovals.length === 1 ? '' : 's'} require your attention`
+            : ''}
+        </div>
 
         {/* Clear conversation confirmation dialog */}
         <AlertDialog open={showClearDialog} onOpenChange={setShowClearDialog}>
