@@ -47,6 +47,18 @@ def implement_command(
       5. Launch Claude Code interactively
       6. Commit, push, create GitHub PR, update issue status
     """
+    if os.environ.get("CLAUDECODE"):
+        console.print(
+            "[red]Error:[/red] Cannot run [bold]pilot implement[/bold] "
+            "inside a Claude Code session."
+        )
+        console.print("[dim]Nested Claude Code sessions are not supported.[/dim]")
+        console.print(
+            f"[dim]Open a new terminal and run: "
+            f"[bold]pilot implement {issue_id}[/bold][/dim]"
+        )
+        raise typer.Exit(1)
+
     try:
         config = PilotConfig.load()
     except FileNotFoundError as e:
@@ -155,12 +167,17 @@ async def _run_implement(issue_id: str, config: PilotConfig) -> None:
     console.print("[dim]  (press Ctrl-C or type /exit to stop Claude Code)[/dim]\n")
 
     try:
-        subprocess.run(["claude"], cwd=str(target_path))
+        result = subprocess.run(["claude"], cwd=str(target_path))
     except FileNotFoundError:
         console.print("\n[red]Error:[/red] [bold]claude[/bold] command not found.")
         console.print("[dim]Install Claude Code: https://docs.anthropic.com/claude-code[/dim]")
         raise typer.Exit(1)
     console.print()  # newline after claude exits
+    if result.returncode != 0:
+        console.print(
+            f"[yellow]Warning:[/yellow] Claude Code exited with code {result.returncode}. "
+            "Any staged changes will still be committed."
+        )
 
     # ── Step 6: Commit, push, PR ─────────────────────────────────────────────
     console.print("[dim][[/dim]6/6[dim]][/dim] Creating pull request...", end=" ")

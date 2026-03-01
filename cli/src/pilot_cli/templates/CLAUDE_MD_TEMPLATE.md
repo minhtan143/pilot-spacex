@@ -55,6 +55,11 @@ _No linked notes for this issue._
 
 {{ project.tech_stack_summary or '_Not specified._' }}
 
+## Your Task
+
+**Implement this issue now.** Work through every acceptance criterion systematically.
+Do not stop until all criteria are satisfied and all quality gates pass.
+
 ## Implementation Instructions
 
 1. **Follow existing patterns** in `docs/dev-pattern/45-pilot-space-patterns.md`
@@ -72,3 +77,9 @@ _No linked notes for this issue._
 - [ ] Quality gates pass (no lint / type / test failures)
 - [ ] No TODOs or placeholder code in committed files
 - [ ] Commit message follows Conventional Commits format
+
+## Completion Signal
+
+When implementation is complete and all quality gates pass:
+1. Stage all changes: `git add -A`
+2. Exit Claude Code: type `/exit`

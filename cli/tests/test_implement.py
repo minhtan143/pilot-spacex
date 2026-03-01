@@ -65,6 +65,12 @@ def patch_workspaces_dir(tmp_path: Path):  # type: ignore[no-untyped-def]
         yield
 
 
+@pytest.fixture(autouse=True)
+def unset_claudecode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure CLAUDECODE env var is unset so the guard does not fire in tests."""
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+
+
 class TestImplementHappyPath:
     def test_full_workflow_creates_pr(self, tmp_path: Path) -> None:
         """Happy path: context fetched, repo cloned, PR created, issue updated."""
@@ -249,6 +255,13 @@ class TestImplementHappyPath:
 
 
 class TestImplementErrorPaths:
+    def test_nested_session_exits_1(self) -> None:
+        """Running inside a Claude Code session (CLAUDECODE env var) exits 1."""
+        with patch.dict("os.environ", {"CLAUDECODE": "1"}):
+            result = runner.invoke(app, ["implement", "PS-42"])
+        assert result.exit_code == 1
+        assert "Nested Claude Code sessions are not supported" in result.output
+
     def test_missing_config_exits_1(self) -> None:
         """Missing config prints login hint and exits 1."""
         with patch(
@@ -342,6 +355,49 @@ class TestImplementErrorPaths:
 
         assert result.exit_code == 1
         assert "Clone failed" in result.output
+
+    def test_claude_non_zero_exit_warns_but_continues(self, tmp_path: Path) -> None:
+        """Non-zero claude exit code prints warning but step 6 still runs."""
+        mock_repo = _mock_repo(dirty=True)
+
+        with (
+            patch(
+                "pilot_cli.commands.implement.PilotConfig.load",
+                return_value=MOCK_CONFIG,
+            ),
+            patch("pilot_cli.commands.implement.PilotAPIClient") as mock_client_cls,
+            patch(
+                "pilot_cli.commands.implement.git.Repo.clone_from",
+                return_value=mock_repo,
+            ),
+            patch("pilot_cli.commands.implement.GitHubClient") as mock_gh_cls,
+            patch(
+                "pilot_cli.commands.implement.subprocess.run",
+                return_value=MagicMock(returncode=1),
+            ),
+            patch(
+                "pilot_cli.commands.implement._get_github_token",
+                return_value="ghp_test",
+            ),
+            patch("pilot_cli.commands.implement._inject_claude_md"),
+        ):
+            api_client = AsyncMock()
+            api_client.get_implement_context.return_value = MOCK_CTX
+            api_client.update_issue_status = AsyncMock()
+            mock_client_cls.from_config.return_value = api_client
+
+            gh_client = AsyncMock()
+            pr_result = MagicMock()
+            pr_result.url = "https://github.com/acme/backend/pull/7"
+            gh_client.create_pull_request.return_value = pr_result
+            mock_gh_cls.from_clone_url.return_value = gh_client
+
+            result = runner.invoke(app, ["implement", "PS-42"])
+
+        assert result.exit_code == 0, result.output
+        assert "exited with code 1" in result.output
+        # Step 6 still executed
+        api_client.update_issue_status.assert_awaited_once_with("PS-42", "in_review")
 
     def test_pr_creation_failure_warns_but_continues(self, tmp_path: Path) -> None:
         """GitHubClientError during PR creation shows warning but does not abort."""
@@ -573,6 +629,24 @@ class TestInjectClaudeMd:
         _inject_claude_md(tmp_path, MOCK_CTX)
         content = (tmp_path / "CLAUDE.md").read_text()
         assert "feat/ps-42-fix-auth-race-condition" in content
+
+    def test_rendered_template_has_action_directive(self, tmp_path: Path) -> None:
+        """Rendered CLAUDE.md contains explicit 'implement now' directive."""
+        from pilot_cli.commands.implement import _inject_claude_md
+
+        _inject_claude_md(tmp_path, MOCK_CTX)
+        content = (tmp_path / "CLAUDE.md").read_text()
+        assert "Implement this issue now" in content
+
+    def test_rendered_template_has_completion_signal(self, tmp_path: Path) -> None:
+        """Rendered CLAUDE.md contains stage-and-exit completion signal."""
+        from pilot_cli.commands.implement import _inject_claude_md
+
+        _inject_claude_md(tmp_path, MOCK_CTX)
+        content = (tmp_path / "CLAUDE.md").read_text()
+        assert "Completion Signal" in content
+        assert "git add -A" in content
+        assert "/exit" in content
 
 
 class TestGetGithubToken:
