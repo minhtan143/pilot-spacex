@@ -5,13 +5,14 @@
  * Pure presentational — data is passed as props (no observer wrapper needed).
  */
 
-import { Github, GitPullRequest, GitCommit, GitBranch, ExternalLink } from 'lucide-react';
+import { Bot, Github, GitPullRequest, GitCommit, GitBranch, ExternalLink } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { CollapsibleSection } from './collapsible-section';
 import { CreateBranchPopover } from './create-branch-popover';
+import { ImplementPopover } from './implement-popover';
 import type { IntegrationLink } from '@/types';
 
 export interface GitHubSectionProps {
@@ -26,6 +27,7 @@ export interface GitHubSectionProps {
   integrationId?: string;
   workspaceId?: string;
   issueId?: string;
+  issueIdentifier?: string;
 }
 
 const PR_STATE: Record<string, string> = {
@@ -46,10 +48,12 @@ export function GitHubSection({
   integrationId,
   workspaceId,
   issueId,
+  issueIdentifier,
 }: GitHubSectionProps) {
   const total = pullRequests.length + commits.length + branches.length;
   const showCreateBranch = branches.length === 0 && !isLoading;
   const canCreateBranch = !!(integrationId && workspaceId && issueId);
+  const canImplement = !!(integrationId && workspaceId && issueId && issueIdentifier);
 
   return (
     <CollapsibleSection
@@ -73,12 +77,21 @@ export function GitHubSection({
           <Github className="size-8 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">No linked GitHub activity</p>
           {showCreateBranch && (
-            <CreateBranchAction
-              canCreate={canCreateBranch}
-              integrationId={integrationId}
-              workspaceId={workspaceId}
-              issueId={issueId}
-            />
+            <div className="flex flex-wrap gap-2">
+              <CreateBranchAction
+                canCreate={canCreateBranch}
+                integrationId={integrationId}
+                workspaceId={workspaceId}
+                issueId={issueId}
+              />
+              <ImplementAction
+                canImplement={canImplement}
+                integrationId={integrationId}
+                workspaceId={workspaceId}
+                issueId={issueId}
+                issueIdentifier={issueIdentifier}
+              />
+            </div>
           )}
         </div>
       ) : (
@@ -173,12 +186,19 @@ export function GitHubSection({
             </>
           )}
           {showCreateBranch && (
-            <div className="mt-3 px-2">
+            <div className="mt-3 px-2 flex flex-wrap gap-2">
               <CreateBranchAction
                 canCreate={canCreateBranch}
                 integrationId={integrationId}
                 workspaceId={workspaceId}
                 issueId={issueId}
+              />
+              <ImplementAction
+                canImplement={canImplement}
+                integrationId={integrationId}
+                workspaceId={workspaceId}
+                issueId={issueId}
+                issueIdentifier={issueIdentifier}
               />
             </div>
           )}
@@ -221,6 +241,49 @@ function CreateBranchAction({
         <Button variant="outline" size="sm" disabled aria-label="Create GitHub branch">
           <GitBranch className="size-3.5" />
           Create branch
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Connect GitHub first</TooltipContent>
+    </Tooltip>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Internal helper — renders Implement with Claude button or disabled tooltip
+// ---------------------------------------------------------------------------
+
+interface ImplementActionProps {
+  canImplement: boolean;
+  integrationId?: string;
+  workspaceId?: string;
+  issueId?: string;
+  issueIdentifier?: string;
+}
+
+function ImplementAction({
+  canImplement,
+  integrationId,
+  workspaceId,
+  issueId,
+  issueIdentifier,
+}: ImplementActionProps) {
+  if (canImplement) {
+    return (
+      <ImplementPopover
+        integrationId={integrationId!}
+        workspaceId={workspaceId!}
+        issueId={issueId!}
+        issueIdentifier={issueIdentifier!}
+      />
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="outline" size="sm" disabled aria-label="Implement with Claude">
+          <Bot className="size-3.5" />
+          Implement with Claude
         </Button>
       </TooltipTrigger>
       <TooltipContent>Connect GitHub first</TooltipContent>

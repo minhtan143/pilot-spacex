@@ -17,6 +17,12 @@ interface IssueFilters {
   labels?: string[];
 }
 
+export interface ImplementContextResponse {
+  issue: { identifier: string; title: string };
+  suggested_branch: string;
+  repository: { clone_url: string; default_branch: string; provider: string };
+}
+
 // Plan generation response
 export interface GeneratePlanResponse {
   contextId: string;
@@ -215,6 +221,10 @@ export const issuesApi = {
     return apiClient.get<{ content: string }>(`/issues/${issueId}/ai-context/export`, {
       params: { format },
     });
+  },
+
+  getImplementContext(_workspaceId: string, issueId: string): Promise<ImplementContextResponse> {
+    return apiClient.get<ImplementContextResponse>(`/issues/${issueId}/implement-context`);
   },
 
   recordSuggestionDecision(

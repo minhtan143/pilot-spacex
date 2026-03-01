@@ -255,6 +255,7 @@ export function IssueEditorContent({
               integrationId={githubInstallation?.id}
               workspaceId={workspaceId}
               issueId={issueId}
+              issueIdentifier={issue.identifier}
             />
 
             <CollapsibleSection
