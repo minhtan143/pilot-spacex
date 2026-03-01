@@ -36,6 +36,14 @@ _SAFE_SLUG_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 def implement_command(
     issue_id: Annotated[str, typer.Argument(help="Issue ID, e.g. PS-42")],
+    oneshot: Annotated[
+        bool,
+        typer.Option(
+            "--oneshot",
+            "-n",
+            help="Non-interactive mode: run 'claude --print' for CI/automation.",
+        ),
+    ] = False,
 ) -> None:
     """Implement an issue with Claude Code — full automated workflow.
 
@@ -44,10 +52,10 @@ def implement_command(
       2. Clone the project repository
       3. Create a feature branch
       4. Inject CLAUDE.md with issue context
-      5. Launch Claude Code interactively
+      5. Launch Claude Code (interactive or --oneshot for CI)
       6. Commit, push, create GitHub PR, update issue status
     """
-    if os.environ.get("CLAUDECODE"):
+    if not oneshot and os.environ.get("CLAUDECODE"):
         console.print(
             "[red]Error:[/red] Cannot run [bold]pilot implement[/bold] "
             "inside a Claude Code session."
@@ -56,6 +64,7 @@ def implement_command(
         console.print(
             f"[dim]Open a new terminal and run: "
             f"[bold]pilot implement {issue_id}[/bold][/dim]"
+            f"\n[dim]Or use [bold]--oneshot[/bold] for non-interactive automation.[/dim]"
         )
         raise typer.Exit(1)
 
@@ -65,10 +74,17 @@ def implement_command(
         console.print("[red]Not logged in.[/red] Run [bold]pilot login[/bold] first.")
         raise typer.Exit(1) from e
 
-    asyncio.run(_run_implement(issue_id, config))
+    asyncio.run(_run_implement(issue_id, config, oneshot=oneshot))
 
 
-async def _run_implement(issue_id: str, config: PilotConfig) -> None:
+_ONESHOT_PROMPT = (
+    "Read CLAUDE.md in this repository. It contains an issue to implement. "
+    "Implement the issue completely following every instruction in CLAUDE.md. "
+    "Run the quality gates before finishing. Stage all changes when done."
+)
+
+
+async def _run_implement(issue_id: str, config: PilotConfig, *, oneshot: bool = False) -> None:
     client = PilotAPIClient.from_config(config)
 
     # ── Step 1: Fetch context ────────────────────────────────────────────────
@@ -162,17 +178,37 @@ async def _run_implement(issue_id: str, config: PilotConfig) -> None:
     _inject_claude_md(target_path, ctx)
     console.print("[green]✓[/green]")
 
+    # Snapshot HEAD SHA before Claude runs so step 6 can detect new commits.
+    pre_claude_sha = repo.head.commit.hexsha
+
     # ── Step 5: Launch Claude Code ───────────────────────────────────────────
-    console.print("[dim][[/dim]5/6[dim]][/dim] Launching Claude Code...")
-    console.print("[dim]  (press Ctrl-C or type /exit to stop Claude Code)[/dim]\n")
+    if oneshot:
+        console.print("[dim][[/dim]5/6[dim]][/dim] Running Claude Code (oneshot)...")
+        claude_cmd = [
+            "claude",
+            "--print",
+            _ONESHOT_PROMPT,
+            "--dangerously-skip-permissions",
+        ]
+        # Strip CLAUDECODE so claude's own nested-session guard does not block us.
+        # Safe: oneshot is a single non-interactive subprocess, not a recursive spawn.
+        child_env: dict[str, str] | None = {
+            k: v for k, v in os.environ.items() if k != "CLAUDECODE"
+        }
+    else:
+        console.print("[dim][[/dim]5/6[dim]][/dim] Launching Claude Code...")
+        console.print("[dim]  (press Ctrl-C or type /exit to stop Claude Code)[/dim]\n")
+        claude_cmd = ["claude"]
+        child_env = None  # inherit full environment
 
     try:
-        result = subprocess.run(["claude"], cwd=str(target_path))
+        result = subprocess.run(claude_cmd, cwd=str(target_path), env=child_env)
     except FileNotFoundError:
         console.print("\n[red]Error:[/red] [bold]claude[/bold] command not found.")
         console.print("[dim]Install Claude Code: https://docs.anthropic.com/claude-code[/dim]")
         raise typer.Exit(1)
-    console.print()  # newline after claude exits
+    if not oneshot:
+        console.print()  # newline after interactive session exits
     if result.returncode != 0:
         console.print(
             f"[yellow]Warning:[/yellow] Claude Code exited with code {result.returncode}. "
@@ -183,7 +219,11 @@ async def _run_implement(issue_id: str, config: PilotConfig) -> None:
     console.print("[dim][[/dim]6/6[dim]][/dim] Creating pull request...", end=" ")
 
     repo.git.add("-A")
-    if not repo.is_dirty(untracked_files=True):
+    # Claude may have committed changes itself (common in oneshot mode).
+    # Detect both cases: unstaged/staged changes AND new commits from Claude.
+    has_staged = repo.is_dirty(untracked_files=True)
+    has_new_commits = repo.head.commit.hexsha != pre_claude_sha
+    if not has_staged and not has_new_commits:
         console.print()
         console.print(
             "[yellow]Warning:[/yellow] No changes after Claude Code "
@@ -191,14 +231,18 @@ async def _run_implement(issue_id: str, config: PilotConfig) -> None:
         )
         return
 
-    # F-13: Sanitize issue_title to prevent commit message injection
-    safe_title = _sanitize_text(issue_title, max_len=100)
-    commit_msg = (
-        f"feat({issue_id}): {safe_title}\n\n"
-        f"Implemented via `pilot implement {issue_id}`.\n\n"
-        f"Closes #{issue_id}"
-    )
-    repo.index.commit(commit_msg)
+    # Only create a new commit when there are staged changes to wrap.
+    # If Claude already committed its work, skip creating a duplicate commit.
+    if has_staged:
+        # F-13: Sanitize issue_title to prevent commit message injection
+        safe_title = _sanitize_text(issue_title, max_len=100)
+        commit_msg = (
+            f"feat({issue_id}): {safe_title}\n\n"
+            f"Implemented via `pilot implement {issue_id}`.\n\n"
+            f"Closes #{issue_id}"
+        )
+        repo.index.commit(commit_msg)
+
     repo.git.push("origin", suggested_branch)
 
     # Create GitHub PR

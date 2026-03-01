@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -48,13 +48,34 @@ MOCK_CONFIG = PilotConfig(
 )
 
 
-def _mock_repo(dirty: bool = True) -> MagicMock:
+_MOCK_SHA = "abc1234abc1234abc1234abc1234abc1234abc12"  # 40-char fake SHA
+
+
+def _mock_repo(dirty: bool = True, new_commits: bool = False) -> MagicMock:
+    """Build a mock git.Repo.
+
+    Args:
+        dirty: Whether is_dirty() returns True (uncommitted changes exist).
+        new_commits: If True, simulate Claude committing — hexsha changes between
+                     the pre-step-5 snapshot and the post-step-5 check.
+    """
     repo = MagicMock()
     repo.git.checkout = MagicMock()
     repo.git.add = MagicMock()
     repo.git.push = MagicMock()
     repo.index.commit = MagicMock()
     repo.is_dirty.return_value = dirty
+
+    # hexsha is read twice: once before Claude (snapshot) and once after (diff).
+    # Use PropertyMock so each access consumes the next value in sequence.
+    commit_mock = MagicMock()
+    if new_commits:
+        type(commit_mock).hexsha = PropertyMock(
+            side_effect=[_MOCK_SHA, _MOCK_SHA + "new"]
+        )
+    else:
+        type(commit_mock).hexsha = PropertyMock(return_value=_MOCK_SHA)
+    repo.head.commit = commit_mock
     return repo
 
 
@@ -113,6 +134,102 @@ class TestImplementHappyPath:
         assert result.exit_code == 0, result.output
         assert "Fix auth race condition" in result.output
         assert "https://github.com/acme/backend/pull/5" in result.output
+        api_client.update_issue_status.assert_awaited_once_with("PS-42", "in_review")
+
+    def test_oneshot_uses_print_flag(self, tmp_path: Path) -> None:
+        """--oneshot invokes 'claude --print <prompt> --dangerously-skip-permissions'."""
+        mock_repo = _mock_repo(dirty=True)
+
+        with (
+            patch(
+                "pilot_cli.commands.implement.PilotConfig.load",
+                return_value=MOCK_CONFIG,
+            ),
+            patch("pilot_cli.commands.implement.PilotAPIClient") as mock_client_cls,
+            patch(
+                "pilot_cli.commands.implement.git.Repo.clone_from",
+                return_value=mock_repo,
+            ),
+            patch("pilot_cli.commands.implement.GitHubClient") as mock_gh_cls,
+            patch(
+                "pilot_cli.commands.implement.subprocess.run",
+                return_value=MagicMock(returncode=0),
+            ) as mock_run,
+            patch(
+                "pilot_cli.commands.implement._get_github_token",
+                return_value="ghp_test",
+            ),
+            patch("pilot_cli.commands.implement._inject_claude_md"),
+        ):
+            api_client = AsyncMock()
+            api_client.get_implement_context.return_value = MOCK_CTX
+            api_client.update_issue_status = AsyncMock()
+            mock_client_cls.from_config.return_value = api_client
+
+            gh_client = AsyncMock()
+            pr_result = MagicMock()
+            pr_result.url = "https://github.com/acme/backend/pull/5"
+            gh_client.create_pull_request.return_value = pr_result
+            mock_gh_cls.from_clone_url.return_value = gh_client
+
+            result = runner.invoke(app, ["implement", "PS-42", "--oneshot"])
+
+        assert result.exit_code == 0, result.output
+        # First subprocess.run call is the claude invocation
+        claude_call = mock_run.call_args_list[0]
+        cmd = claude_call[0][0]
+        assert cmd[0] == "claude"
+        assert "--print" in cmd
+        assert "--dangerously-skip-permissions" in cmd
+        assert "oneshot" in result.output.lower() or "oneshot" in str(cmd).lower()
+
+    def test_claude_committed_own_changes_still_pushes(self, tmp_path: Path) -> None:
+        """When Claude commits changes itself (no staged diff), step 6 still pushes + creates PR."""
+        # dirty=False: no uncommitted changes (Claude committed them)
+        # new_commits=True: hexsha changed → Claude made new commits
+        mock_repo = _mock_repo(dirty=False, new_commits=True)
+
+        with (
+            patch(
+                "pilot_cli.commands.implement.PilotConfig.load",
+                return_value=MOCK_CONFIG,
+            ),
+            patch("pilot_cli.commands.implement.PilotAPIClient") as mock_client_cls,
+            patch(
+                "pilot_cli.commands.implement.git.Repo.clone_from",
+                return_value=mock_repo,
+            ),
+            patch("pilot_cli.commands.implement.GitHubClient") as mock_gh_cls,
+            patch(
+                "pilot_cli.commands.implement.subprocess.run",
+                return_value=MagicMock(returncode=0),
+            ),
+            patch(
+                "pilot_cli.commands.implement._get_github_token",
+                return_value="ghp_test",
+            ),
+            patch("pilot_cli.commands.implement._inject_claude_md"),
+        ):
+            api_client = AsyncMock()
+            api_client.get_implement_context.return_value = MOCK_CTX
+            api_client.update_issue_status = AsyncMock()
+            mock_client_cls.from_config.return_value = api_client
+
+            gh_client = AsyncMock()
+            pr_result = MagicMock()
+            pr_result.url = "https://github.com/acme/backend/pull/8"
+            gh_client.create_pull_request.return_value = pr_result
+            mock_gh_cls.from_clone_url.return_value = gh_client
+
+            result = runner.invoke(app, ["implement", "PS-42"])
+
+        assert result.exit_code == 0, result.output
+        # No duplicate commit created (Claude already committed)
+        mock_repo.index.commit.assert_not_called()
+        # But branch should still be pushed
+        mock_repo.git.push.assert_called_once()
+        # PR should still be created
+        assert "https://github.com/acme/backend/pull/8" in result.output
         api_client.update_issue_status.assert_awaited_once_with("PS-42", "in_review")
 
     def test_no_changes_skips_pr(self, tmp_path: Path) -> None:
@@ -261,6 +378,21 @@ class TestImplementErrorPaths:
             result = runner.invoke(app, ["implement", "PS-42"])
         assert result.exit_code == 1
         assert "Nested Claude Code sessions are not supported" in result.output
+
+    def test_nested_session_guard_skipped_in_oneshot(self) -> None:
+        """--oneshot bypasses the CLAUDECODE guard (automation does not recurse)."""
+        with (
+            patch.dict("os.environ", {"CLAUDECODE": "1"}),
+            patch(
+                "pilot_cli.commands.implement.PilotConfig.load",
+                side_effect=FileNotFoundError("no config"),
+            ),
+        ):
+            result = runner.invoke(app, ["implement", "PS-42", "--oneshot"])
+        # Exits 1 from missing config, NOT from the CLAUDECODE guard
+        assert result.exit_code == 1
+        assert "pilot login" in result.output
+        assert "Nested Claude Code sessions are not supported" not in result.output
 
     def test_missing_config_exits_1(self) -> None:
         """Missing config prints login hint and exits 1."""
