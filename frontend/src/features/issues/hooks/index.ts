@@ -51,3 +51,6 @@ export type { UseIssueLinksResult } from './use-issue-links';
 // Create GitHub branch from issue
 export { useCreateBranch } from './use-create-branch';
 export type { CreateBranchVars } from './use-create-branch';
+
+// Issue-to-issue relations (blocks, blocked_by, duplicates, related)
+export { useIssueRelations, issueRelationsKeys } from './use-issue-relations';

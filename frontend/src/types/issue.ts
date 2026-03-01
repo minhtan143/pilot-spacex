@@ -29,7 +29,7 @@ export interface Issue {
   assigneeId?: string;
   assignee?: UserBrief | null;
   reporterId: string;
-  reporter: UserBrief;
+  reporter?: UserBrief;
   labels: LabelBrief[];
   estimatePoints?: number;
   /** Time estimate in hours (0.5 increments, T-245) */
@@ -39,7 +39,7 @@ export interface Issue {
   cycleId?: string;
   parentId?: string;
   subIssueCount: number;
-  project: ProjectBrief;
+  project?: ProjectBrief;
   aiGenerated?: boolean;
   hasAiEnhancements: boolean;
   aiMetadata?: Record<string, unknown>;
@@ -155,13 +155,31 @@ export interface IntegrationLink {
   commitTimestamp?: string;
 }
 
-// Note Issue Link (frontend-only, for future backend support)
+// Note Issue Link (matches backend NoteIssueLinkBriefSchema)
 export interface NoteIssueLink {
   id: string;
   noteId: string;
   issueId: string;
   linkType: 'CREATED' | 'EXTRACTED' | 'REFERENCED';
   noteTitle: string;
+}
+
+// Related issue brief — state is always present (guaranteed by backend IssueBriefResponse)
+export interface RelatedIssueBrief {
+  id: string;
+  identifier: string;
+  name: string;
+  priority: IssuePriority;
+  state: StateBrief;
+  assignee?: UserBrief | null;
+}
+
+// Issue-to-issue relation (from GET /workspaces/{id}/issues/{id}/relations)
+export interface IssueRelation {
+  id: string;
+  linkType: 'blocks' | 'blocked_by' | 'duplicates' | 'related';
+  direction: 'outbound' | 'inbound';
+  relatedIssue: RelatedIssueBrief;
 }
 
 export type { UserBrief, StateBrief, ProjectBrief, LabelBrief, User, IssuePriority };
