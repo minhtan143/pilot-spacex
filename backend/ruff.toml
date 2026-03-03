@@ -86,7 +86,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [lint.per-file-ignores]
 # Tests can have assertions, unused fixtures, and access private members for unit testing
-"tests/**/*.py" = ["S101", "ARG001", "PLR2004", "SLF001", "F841", "PLR0911"]
+"tests/**/*.py" = ["S101", "ARG001", "PLR2004", "SLF001", "F841", "RUF059", "PLR0911"]
 # Init files can have unused imports
 "__init__.py" = ["F401"]
 # Alembic migrations have specific patterns
@@ -99,7 +99,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 # GitHub tools use early-return guard clauses across multiple error paths
 "src/pilot_space/ai/tools/github_tools.py" = ["PLR0911"]
 # Scripts have relaxed rules
-"scripts/**/*.py" = ["DTZ005", "T20", "INP001", "F841", "PTH123", "RET504", "TRY400", "PLR0911", "RUF022"]
+"scripts/**/*.py" = ["DTZ005", "T20", "INP001", "F841", "RUF059", "PTH123", "RET504", "TRY400", "PLR0911", "RUF022"]
 
 [lint.isort]
 # isort configuration

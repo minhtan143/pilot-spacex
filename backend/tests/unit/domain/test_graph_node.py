@@ -52,6 +52,8 @@ class TestNodeTypeEnum:
             "cycle",
             "user",
             "pull_request",
+            "branch",
+            "commit",
             "code_reference",
             "decision",
             "skill_outcome",
