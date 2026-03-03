@@ -12,7 +12,7 @@ export function useImplementationPlan(workspaceId: string, issueId: string) {
     queryKey: implementationPlanKeys.detail(issueId),
     queryFn: () => issuesApi.getImplementContext(workspaceId, issueId),
     staleTime: 5 * 60_000,
-    retry: false,
+    retry: 2,
     enabled: !!issueId && !!workspaceId,
   });
 }

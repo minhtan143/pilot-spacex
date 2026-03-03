@@ -8,6 +8,7 @@ Feature 016: Knowledge Graph — Memory Engine replacement
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -138,7 +139,7 @@ class GraphSearchService:
         scored_nodes = _rerank(scored_nodes)
 
         # Collect intra-result edges from the root result sub-graph
-        edges = await self._collect_edges(scored_nodes)
+        edges = await self._collect_edges(scored_nodes, workspace_id=payload.workspace_id)
 
         logger.info(
             "GraphSearchService: query=%r workspace=%s nodes=%d embedding=%s",
@@ -163,7 +164,9 @@ class GraphSearchService:
     async def _get_embedding(query: str, api_key: str | None) -> tuple[list[float] | None, bool]:
         """Generate a 1536-dim OpenAI embedding for the query.
 
-        Uses AsyncOpenAI to avoid blocking the event loop.
+        Uses AsyncOpenAI to avoid blocking the event loop. A 10s client
+        timeout and a 15s asyncio.wait_for guard prevent the call from
+        stalling the request indefinitely (H-3).
 
         Args:
             query: Text to embed.
@@ -177,13 +180,22 @@ class GraphSearchService:
         try:
             from openai import AsyncOpenAI  # type: ignore[import-untyped]
 
-            client = AsyncOpenAI(api_key=api_key)
-            response = await client.embeddings.create(
-                model=_OPENAI_EMBEDDING_MODEL,
-                input=query,
+            client = AsyncOpenAI(api_key=api_key, timeout=10.0)
+            response = await asyncio.wait_for(
+                client.embeddings.create(
+                    model=_OPENAI_EMBEDDING_MODEL,
+                    input=query,
+                    dimensions=1536,
+                ),
+                timeout=15.0,
             )
             embedding: list[float] = response.data[0].embedding
             return embedding, True
+        except TimeoutError:
+            logger.warning(
+                "OpenAI embedding timed out for graph search — falling back to text-only"
+            )
+            return None, False
         except Exception:
             logger.warning(
                 "OpenAI embedding failed for graph search — falling back to text-only",
@@ -242,6 +254,7 @@ class GraphSearchService:
     async def _collect_edges(
         self,
         scored_nodes: list[ScoredNode],
+        workspace_id: UUID | None = None,
     ) -> list[GraphEdge]:
         """Collect edges between the result nodes from the top node's sub-graph.
 
@@ -250,6 +263,7 @@ class GraphSearchService:
 
         Args:
             scored_nodes: Ranked result list.
+            workspace_id: Optional workspace scope to enforce boundary in subgraph.
 
         Returns:
             Edges where both endpoints appear in the result set.
@@ -260,7 +274,9 @@ class GraphSearchService:
         result_ids = {sn.node.id for sn in scored_nodes}
         root_id = scored_nodes[0].node.id
         try:
-            _, edges = await self._repo.get_subgraph(root_id, max_depth=2)
+            _, edges = await self._repo.get_subgraph(
+                root_id, max_depth=2, workspace_id=workspace_id
+            )
         except Exception:
             logger.warning("get_subgraph failed for root %s — returning empty edges", root_id)
             return []

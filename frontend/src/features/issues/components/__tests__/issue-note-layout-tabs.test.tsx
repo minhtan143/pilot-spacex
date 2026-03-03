@@ -71,6 +71,7 @@ vi.mock('motion/react', () => ({
 
 import { IssueNoteLayout } from '../issue-note-layout';
 import type { RightPanelTab } from '../issue-note-layout';
+import type { PilotSpaceStore } from '@/stores/ai/PilotSpaceStore';
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -78,7 +79,7 @@ import type { RightPanelTab } from '../issue-note-layout';
 
 const DEFAULT_PROPS = {
   editorContent: <div data-testid="editor-content">Editor</div>,
-  aiStore: { pilotSpace: {} },
+  aiStore: { pilotSpace: {} as PilotSpaceStore },
   isChatOpen: true,
   onChatOpen: vi.fn(),
   onChatClose: vi.fn(),
@@ -147,17 +148,17 @@ describe('IssueNoteLayout — tab system', () => {
     expect(onRightPanelTabChange).toHaveBeenCalledWith('chat');
   });
 
-  it('chat panel has display:none (not unmounted) when graph tab is active', () => {
+  it('chat panel has hidden class (not unmounted) when graph tab is active', () => {
     renderLayout({
       knowledgeGraphContent: <div data-testid="graph-content">Graph</div>,
       rightPanelTab: 'knowledge-graph' as RightPanelTab,
       onRightPanelTabChange: vi.fn(),
     });
 
-    // Chat panel should exist in DOM but be hidden via display:none
+    // Chat panel should exist in DOM but be visually hidden via Tailwind 'hidden' class
     const chatPanel = screen.getByTestId('chat-panel');
     expect(chatPanel).toBeTruthy();
-    expect(chatPanel).toHaveStyle({ display: 'none' });
+    expect(chatPanel).toHaveClass('hidden');
 
     // Chat view content should still be mounted (not removed from DOM)
     expect(screen.getByTestId('chat-view')).toBeTruthy();
@@ -173,14 +174,18 @@ describe('IssueNoteLayout — tab system', () => {
     expect(screen.getByTestId('graph-content')).toBeTruthy();
   });
 
-  it('does not render graph content when chat tab is active', () => {
+  it('graph panel is always mounted but hidden when chat tab is active', () => {
     renderLayout({
       knowledgeGraphContent: <div data-testid="graph-content">Graph</div>,
       rightPanelTab: 'chat',
       onRightPanelTabChange: vi.fn(),
     });
 
-    expect(screen.queryByTestId('graph-content')).toBeNull();
+    // Graph content stays mounted (not removed from DOM) but is visually hidden
+    const graphContent = screen.getByTestId('graph-content');
+    expect(graphContent).toBeTruthy();
+    // The parent panel div should have the 'hidden' class
+    expect(graphContent.parentElement).toHaveClass('hidden');
   });
 
   it('Chat tab has aria-selected=true when chat tab is active', () => {

@@ -109,11 +109,13 @@ class GraphWriteResult:
         node_ids: UUIDs of all persisted (inserted or updated) nodes.
         edge_ids: UUIDs of all persisted (inserted or updated) edges.
         embedding_enqueued: True when embedding jobs were submitted successfully.
+        failed_edge_count: Number of edges that failed to persist (M-2).
     """
 
     node_ids: list[UUID]
     edge_ids: list[UUID]
     embedding_enqueued: bool
+    failed_edge_count: int = 0
 
 
 class GraphWriteService:
@@ -192,10 +194,12 @@ class GraphWriteService:
 
         # Step 3 + 4: resolve and upsert edges
         persisted_edges: list[GraphEdge] = []
+        failed_edge_count = 0
         for ei in payload.edges:
-            edge = await self._upsert_edge_input(ei, ext_id_map)
+            edge, failed = await self._upsert_edge_input(ei, ext_id_map)
             if edge is not None:
                 persisted_edges.append(edge)
+            failed_edge_count += failed
 
         # Step 5 + 6: auto-detect issue references, then commit everything together
         auto_edges = await self._detect_issue_references(persisted_nodes)
@@ -218,6 +222,7 @@ class GraphWriteService:
             node_ids=node_ids,
             edge_ids=[e.id for e in persisted_edges],
             embedding_enqueued=embedding_enqueued,
+            failed_edge_count=failed_edge_count,
         )
 
     # ------------------------------------------------------------------
@@ -228,7 +233,7 @@ class GraphWriteService:
         self,
         ei: EdgeInput,
         ext_id_map: dict[UUID, UUID],
-    ) -> GraphEdge | None:
+    ) -> tuple[GraphEdge | None, int]:
         """Resolve edge endpoints and upsert.
 
         Args:
@@ -237,7 +242,7 @@ class GraphWriteService:
                 persisted in the current batch.
 
         Returns:
-            Persisted GraphEdge, or None if endpoints could not be resolved.
+            Tuple of (persisted GraphEdge or None, failed_count: 0 or 1).
         """
         source_id = ei.source_node_id or (
             ext_id_map.get(ei.source_external_id) if ei.source_external_id else None
@@ -253,11 +258,11 @@ class GraphWriteService:
                 ei.source_external_id,
                 ei.target_external_id,
             )
-            return None
+            return None, 0
 
         if source_id == target_id:
             logger.warning("GraphWriteService: skipping self-loop edge for node %s", source_id)
-            return None
+            return None, 0
 
         edge = GraphEdge(
             source_id=source_id,
@@ -266,7 +271,17 @@ class GraphWriteService:
             weight=ei.weight,
             properties=dict(ei.properties),
         )
-        return await self._repo.upsert_edge(edge)
+        try:
+            persisted = await self._repo.upsert_edge(edge)
+            return persisted, 0
+        except Exception:
+            logger.error(
+                "GraphWriteService: failed to upsert edge %s -> %s",
+                source_id,
+                target_id,
+                exc_info=True,
+            )
+            return None, 1
 
     async def _detect_issue_references(
         self,
@@ -315,6 +330,9 @@ class GraphWriteService:
     async def _enqueue_embedding_jobs(self, node_ids: list[UUID], workspace_id: UUID) -> bool:
         """Enqueue graph_embedding jobs for all persisted nodes in parallel.
 
+        Concurrency is bounded by a semaphore (max 10 in-flight) to prevent
+        unbounded asyncio.gather from overwhelming the queue (H-2).
+
         Args:
             node_ids: Node UUIDs to embed.
             workspace_id: Workspace for context.
@@ -323,6 +341,7 @@ class GraphWriteService:
             True if all jobs enqueued successfully, False if any failed.
         """
         enqueued_at = datetime.now(tz=UTC).isoformat()
+        sem = asyncio.Semaphore(10)
 
         async def _enqueue_one(node_id: UUID) -> bool:
             job_payload: dict[str, Any] = {
@@ -342,8 +361,14 @@ class GraphWriteService:
                 )
                 return False
 
-        results = await asyncio.gather(*(_enqueue_one(nid) for nid in node_ids))
-        return all(results)
+        async def _bounded_enqueue(nid: UUID) -> bool:
+            async with sem:
+                return await _enqueue_one(nid)
+
+        results = await asyncio.gather(
+            *(_bounded_enqueue(nid) for nid in node_ids), return_exceptions=True
+        )
+        return all(r is True for r in results)
 
 
 __all__ = [

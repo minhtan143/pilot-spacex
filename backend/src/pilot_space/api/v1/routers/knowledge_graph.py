@@ -35,6 +35,7 @@ from pilot_space.infrastructure.database.models.integration import (
     IntegrationLink,
     IntegrationLinkType,
 )
+from pilot_space.infrastructure.database.models.issue import Issue as IssueModel
 from pilot_space.infrastructure.database.repositories.knowledge_graph_repository import (
     KnowledgeGraphRepository,
 )
@@ -207,6 +208,7 @@ async def get_node_neighbors(
         node_id=node_id,
         edge_types=parsed_edge_types,
         depth=depth,
+        workspace_id=workspace_id,
     )
 
     node_dtos = [_node_to_dto(n) for n in neighbors]
@@ -236,6 +238,7 @@ async def get_subgraph(
         root_id=root_id,
         max_depth=max_depth,
         max_nodes=max_nodes,
+        workspace_id=workspace_id,
     )
 
     node_dtos = [_node_to_dto(n) for n in nodes]
@@ -325,6 +328,19 @@ async def get_issue_knowledge_graph(
     """Return knowledge graph subgraph for an issue, optionally enriched with GitHub links."""
     await set_rls_context(session, current_user_id, workspace_id)
 
+    # H-4: Verify the issue exists in this workspace before querying the graph.
+    issue_exists = (
+        await session.execute(
+            select(IssueModel.id).where(
+                IssueModel.id == issue_id,
+                IssueModel.workspace_id == workspace_id,
+                IssueModel.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalar_one_or_none()
+    if issue_exists is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Issue not found")
+
     # Step 1: Find the graph node linked to this issue
     stmt = (
         select(GraphNodeModel)
@@ -355,6 +371,7 @@ async def get_issue_knowledge_graph(
         root_id=center_node_id,
         max_depth=depth,
         max_nodes=max_nodes,
+        workspace_id=workspace_id,
     )
 
     # Apply node type filter if requested

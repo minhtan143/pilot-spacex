@@ -114,14 +114,14 @@ function loadingPlanState() {
 
 /** Returns a plan state with the given data shape. */
 function withPlanData(overrides?: {
-  suggested_branch?: string;
-  ai_context?: { tasks_checklist?: string[] };
+  suggestedBranch?: string;
+  aiContext?: { tasksChecklist?: string[] };
 }) {
   return {
     data: {
-      suggested_branch: 'feat/PS-42-auth-flow',
-      ai_context: {
-        tasks_checklist: ['Design auth schema', 'Implement JWT middleware', 'Add RLS policies'],
+      suggestedBranch: 'feat/PS-42-auth-flow',
+      aiContext: {
+        tasksChecklist: ['Design auth schema', 'Implement JWT middleware', 'Add RLS policies'],
       },
       ...overrides,
     },
@@ -287,7 +287,7 @@ describe('GitHubImplementationSection', () => {
 
   it('does not render task checklist when no tasks in context', () => {
     mockUseImplementationPlan.mockReturnValue(
-      withPlanData({ ai_context: { tasks_checklist: [] } }) as unknown as ReturnType<
+      withPlanData({ aiContext: { tasksChecklist: [] } }) as unknown as ReturnType<
         typeof useImplementationPlan
       >
     );

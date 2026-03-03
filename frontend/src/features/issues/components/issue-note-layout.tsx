@@ -9,7 +9,7 @@
  * Right panel supports an optional tab system (Chat | Knowledge Graph):
  * - When `knowledgeGraphContent` is provided, a tab bar is rendered at the top.
  * - Chat content uses `display:none` (not unmounted) to preserve chat state.
- * - Graph content is conditionally rendered only when graph tab is active.
+ * - Graph content uses `display:none` (not unmounted) to preserve graph state.
  *
  * Mirrors the NoteCanvasLayout pattern for consistent UX.
  */
@@ -21,6 +21,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/componen
 import { CollapsedChatStrip } from '@/components/editor/CollapsedChatStrip';
 import { NoteCanvasMobileLayout } from '@/components/editor/NoteCanvasMobileLayout';
 import { cn } from '@/lib/utils';
+import type { PilotSpaceStore } from '@/stores/ai/PilotSpaceStore';
 
 const ChatView = lazy(() =>
   import('@/features/ai/ChatView/ChatView').then((m) => ({ default: m.ChatView }))
@@ -34,7 +35,7 @@ export interface IssueNoteLayoutProps {
   /** Editor panel content */
   editorContent: ReactNode;
   /** AI store for ChatView */
-  aiStore: { pilotSpace: unknown };
+  aiStore: { pilotSpace: PilotSpaceStore };
   /** Chat panel open state */
   isChatOpen: boolean;
   /** Set chat open state */
@@ -70,8 +71,7 @@ export function IssueNoteLayout({
   onRightPanelTabChange,
 }: IssueNoteLayoutProps) {
   const isSmallScreen = useMediaQuery('(max-width: 1023px)');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pilotSpaceStore = aiStore.pilotSpace as any;
+  const pilotSpaceStore = aiStore.pilotSpace;
 
   const hasGraphTab = !!knowledgeGraphContent;
 
@@ -136,10 +136,12 @@ export function IssueNoteLayout({
         </div>
       )}
 
-      {/* Chat: always mounted, hidden via display:none when graph tab is active */}
+      {/* Chat: always mounted, hidden via CSS when graph tab is active */}
       <div
-        className="flex-1 overflow-hidden min-h-0"
-        style={{ display: hasGraphTab && rightPanelTab === 'knowledge-graph' ? 'none' : 'flex' }}
+        className={cn(
+          'flex-1 overflow-hidden min-h-0',
+          hasGraphTab && rightPanelTab === 'knowledge-graph' ? 'hidden' : 'flex'
+        )}
         role="tabpanel"
         aria-label="Chat panel"
         data-testid="chat-panel"
@@ -147,10 +149,13 @@ export function IssueNoteLayout({
         {chatViewContent}
       </div>
 
-      {/* Graph: conditionally rendered only when graph tab is active */}
-      {hasGraphTab && rightPanelTab === 'knowledge-graph' && (
+      {/* Graph: always mounted when content is provided, hidden via CSS when chat tab is active */}
+      {hasGraphTab && (
         <div
-          className="flex-1 overflow-hidden min-h-0"
+          className={cn(
+            'flex-1 overflow-hidden min-h-0',
+            rightPanelTab !== 'knowledge-graph' && 'hidden'
+          )}
           role="tabpanel"
           aria-label="Knowledge graph panel"
         >
@@ -183,7 +188,7 @@ export function IssueNoteLayout({
     );
   }
 
-  // Desktop: Resizable panels — header sits above editor only; chat extends full height
+  // Desktop: Chat open — full resizable layout with right panel visible
   if (isChatOpen) {
     return (
       <ResizablePanelGroup
@@ -219,12 +224,17 @@ export function IssueNoteLayout({
     );
   }
 
-  // Desktop: Chat closed with collapsed strip
+  // Desktop: Chat closed — ChatView stays mounted but the panel is hidden;
+  // CollapsedChatStrip gives users a way to re-open it.
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full overflow-hidden">
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         {headerContent}
         <div className="flex-1 overflow-hidden min-h-0">{editorContent}</div>
+      </div>
+      {/* Keep ChatView mounted so streaming state is preserved */}
+      <div className="hidden" aria-hidden="true">
+        {rightPanelContent}
       </div>
       <CollapsedChatStrip onClick={onChatOpen} />
     </div>

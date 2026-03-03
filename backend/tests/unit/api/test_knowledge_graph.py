@@ -133,6 +133,40 @@ def _make_session(scalar_result: Any = None, scalars_all: Any = None) -> AsyncMo
     return session
 
 
+def _make_sequential_session(*responses: Any) -> AsyncMock:
+    """Build a mock AsyncSession that returns different results on successive execute calls.
+
+    Each item in ``responses`` is a dict with optional keys:
+      - ``scalar``: value returned by ``scalar_one_or_none()``
+      - ``scalars_all``: list returned by ``scalars().all()``
+
+    Example::
+
+        session = _make_sequential_session(
+            {"scalar": issue_id},  # call 0: issue existence check
+            {"scalar": gn_model},  # call 1: graph node lookup
+            {"scalars_all": [pr_link]},  # call 2: integration links
+        )
+    """
+    call_index = 0
+
+    async def _execute(stmt: Any, *args: Any, **kwargs: Any) -> Any:
+        nonlocal call_index
+        idx = min(call_index, len(responses) - 1)
+        call_index += 1
+        spec = responses[idx]
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=spec.get("scalar"))
+        scalars_mock = MagicMock()
+        scalars_mock.all = MagicMock(return_value=spec.get("scalars_all") or [])
+        result.scalars = MagicMock(return_value=scalars_mock)
+        return result
+
+    session = AsyncMock()
+    session.execute = AsyncMock(side_effect=_execute)
+    return session
+
+
 # ---------------------------------------------------------------------------
 # Test: _node_to_dto helper
 # ---------------------------------------------------------------------------
@@ -531,12 +565,51 @@ class TestGetUserContext:
 class TestIssueKnowledgeGraph:
     """GET /workspaces/{workspace_id}/issues/{issue_id}/knowledge-graph"""
 
-    async def test_issue_graph_returns_empty_when_no_node(self) -> None:
-        """Issue with no graph node → empty GraphResponse with center_node_id=issue_id."""
+    async def test_issue_graph_returns_404_when_issue_not_found(self) -> None:
+        """Non-existent issue raises 404 before querying the graph (H-4)."""
         from unittest.mock import patch
 
-        # Session returns None for graph node lookup
+        from fastapi import HTTPException
+
+        # Session returns None → issue existence check fails → 404
         session = _make_session(scalar_result=None)
+        repo = _make_repo(get_subgraph=AsyncMock(return_value=([], [])))
+
+        with (
+            patch(
+                "pilot_space.api.v1.routers.knowledge_graph.set_rls_context",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "pilot_space.api.v1.routers.knowledge_graph.KnowledgeGraphRepository",
+                return_value=repo,
+            ),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await get_issue_knowledge_graph(
+                workspace_id=TEST_WORKSPACE_ID,
+                issue_id=TEST_ISSUE_ID,
+                session=session,
+                current_user_id=TEST_USER_ID,
+                depth=2,
+                node_types=None,
+                max_nodes=50,
+                include_github=False,
+            )
+
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == "Issue not found"
+        repo.get_subgraph.assert_not_awaited()
+
+    async def test_issue_graph_returns_empty_when_no_graph_node(self) -> None:
+        """Issue exists but has no graph node → empty GraphResponse with center_node_id=issue_id."""
+        from unittest.mock import patch
+
+        # Call 0: issue existence check → found. Call 1: graph node lookup → not found.
+        session = _make_sequential_session(
+            {"scalar": TEST_ISSUE_ID},
+            {"scalar": None},
+        )
         repo = _make_repo(get_subgraph=AsyncMock(return_value=([], [])))
 
         with (
@@ -588,24 +661,12 @@ class TestIssueKnowledgeGraph:
 
         pr_link = _make_integration_link_mock(link_type="pull_request", title="feat: fix login #42")
 
-        # Two execute calls: graph node lookup + integration links
-        call_count = 0
-
-        async def fake_execute(stmt: Any, *args: Any, **kwargs: Any) -> Any:
-            nonlocal call_count
-            result = MagicMock()
-            if call_count == 0:
-                call_count += 1
-                result.scalar_one_or_none = MagicMock(return_value=gn_model)
-            else:
-                call_count += 1
-                scalars_mock = MagicMock()
-                scalars_mock.all = MagicMock(return_value=[pr_link])
-                result.scalars = MagicMock(return_value=scalars_mock)
-            return result
-
-        session = AsyncMock()
-        session.execute = AsyncMock(side_effect=fake_execute)
+        # Call 0: issue existence. Call 1: graph node lookup. Call 2: integration links.
+        session = _make_sequential_session(
+            {"scalar": TEST_ISSUE_ID},
+            {"scalar": gn_model},
+            {"scalars_all": [pr_link]},
+        )
 
         graph_node = _make_graph_node(node_id=TEST_NODE_ID, label="PS-1")
         repo = _make_repo(get_subgraph=AsyncMock(return_value=([graph_node], [])))
@@ -650,7 +711,11 @@ class TestIssueKnowledgeGraph:
         gn_model.workspace_id = TEST_WORKSPACE_ID
         gn_model.is_deleted = False
 
-        session = _make_session(scalar_result=gn_model)
+        # Call 0: issue existence check. Call 1: graph node lookup.
+        session = _make_sequential_session(
+            {"scalar": TEST_ISSUE_ID},
+            {"scalar": gn_model},
+        )
 
         issue_node = _make_graph_node(node_id=TEST_NODE_ID, node_type="issue", label="PS-1")
         note_node = _make_graph_node(node_type="note", label="Note")
@@ -689,7 +754,11 @@ class TestIssueKnowledgeGraph:
         gn_model.workspace_id = TEST_WORKSPACE_ID
         gn_model.is_deleted = False
 
-        session = _make_session(scalar_result=gn_model)
+        # Call 0: issue existence. Call 1: graph node lookup.
+        session = _make_sequential_session(
+            {"scalar": TEST_ISSUE_ID},
+            {"scalar": gn_model},
+        )
 
         skill_node = _make_graph_node(node_type="skill_outcome", label="Skill")
         issue_node = _make_graph_node(node_type="issue", label="Issue")

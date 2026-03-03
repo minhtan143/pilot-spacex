@@ -13,6 +13,7 @@
  */
 
 import * as React from 'react';
+import { useEffect, startTransition, useState, useMemo } from 'react';
 import { ArrowLeft, X } from 'lucide-react';
 import {
   ReactFlow,
@@ -26,11 +27,13 @@ import {
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import * as d3Force from 'd3-force';
 import { formatDistanceToNow } from 'date-fns';
+import { toast } from 'sonner';
 
 import { GraphEmptyState } from './graph-empty-state';
 import { nodeTypes, type GraphNodeData } from './graph-node-renderer';
+import { ErrorBoundary } from '@/components/error-boundary';
+import { computeForceLayout } from '@/features/issues/utils/graph-styles';
 import { useIssueKnowledgeGraph } from '@/features/issues/hooks/use-issue-knowledge-graph';
 import { knowledgeGraphApi } from '@/services/api/knowledge-graph';
 import type { GraphNodeDTO, GraphEdgeDTO, GraphNodeType } from '@/types/knowledge-graph';
@@ -59,77 +62,6 @@ const FILTER_CHIPS: FilterChip[] = [
   { label: 'All', nodeType: 'all' },
 ];
 
-// ── Layout helper ──────────────────────────────────────────────────────────
-
-interface SimNode extends d3Force.SimulationNodeDatum {
-  id: string;
-}
-
-function computeLayout(
-  graphNodes: GraphNodeDTO[],
-  graphEdges: GraphEdgeDTO[],
-  centerNodeId: string,
-  highlightNodeId?: string
-): [Node[], Edge[]] {
-  if (graphNodes.length === 0) return [[], []];
-
-  const WIDTH = 800;
-  const HEIGHT = 500;
-
-  const simNodes: SimNode[] = graphNodes.map((n) => ({
-    id: n.id,
-    x: WIDTH / 2 + (Math.random() - 0.5) * 40,
-    y: HEIGHT / 2 + (Math.random() - 0.5) * 40,
-  }));
-
-  const validIds = new Set(graphNodes.map((n) => n.id));
-  const simLinks = graphEdges
-    .filter((e) => validIds.has(e.sourceId) && validIds.has(e.targetId))
-    .map((e) => ({ source: e.sourceId, target: e.targetId }));
-
-  const simulation = d3Force
-    .forceSimulation<SimNode>(simNodes)
-    .force(
-      'link',
-      d3Force
-        .forceLink<SimNode, d3Force.SimulationLinkDatum<SimNode>>(simLinks)
-        .id((d) => d.id)
-        .distance(80)
-    )
-    .force('charge', d3Force.forceManyBody().strength(-120))
-    .force('center', d3Force.forceCenter(WIDTH / 2, HEIGHT / 2))
-    .force('collision', d3Force.forceCollide(36));
-
-  simulation.stop();
-  for (let i = 0; i < 300; i++) simulation.tick();
-
-  const posMap = new Map(simNodes.map((n) => [n.id, { x: n.x ?? 0, y: n.y ?? 0 }]));
-
-  const nodes: Node[] = graphNodes.map((n) => ({
-    id: n.id,
-    type: 'graphNode',
-    position: posMap.get(n.id) ?? { x: 0, y: 0 },
-    data: {
-      node: n,
-      isCurrent: n.id === centerNodeId,
-      isHighlighted: n.id === highlightNodeId,
-    } satisfies GraphNodeData,
-  }));
-
-  const edges: Edge[] = graphEdges
-    .filter((e) => validIds.has(e.sourceId) && validIds.has(e.targetId))
-    .map((e) => ({
-      id: e.id,
-      source: e.sourceId,
-      target: e.targetId,
-      label: e.label,
-      animated: e.edgeType === 'blocks',
-      style: { stroke: '#94a3b8', strokeWidth: 1.5 },
-    }));
-
-  return [nodes, edges];
-}
-
 // ── Inner component (needs ReactFlowProvider context) ─────────────────────
 
 interface GraphCanvasProps {
@@ -154,6 +86,8 @@ function GraphCanvas({
   const [selectedNode, setSelectedNode] = React.useState<GraphNodeDTO | null>(null);
   const [extraNodes, setExtraNodes] = React.useState<GraphNodeDTO[]>([]);
   const [extraEdges, setExtraEdges] = React.useState<GraphEdgeDTO[]>([]);
+  const [flowNodes, setFlowNodes] = useState<Node[]>([]);
+  const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
 
   const nodeTypes_: GraphNodeType[] | undefined =
     activeFilter === 'all' ? undefined : [activeFilter];
@@ -165,26 +99,53 @@ function GraphCanvas({
   });
 
   // Merge base + expanded neighbor nodes
-  const mergedNodes = React.useMemo(() => {
+  const mergedNodes = useMemo(() => {
     if (!data) return [];
     const baseIds = new Set(data.nodes.map((n) => n.id));
     return [...data.nodes, ...extraNodes.filter((n) => !baseIds.has(n.id))];
   }, [data, extraNodes]);
 
-  const mergedEdges = React.useMemo(() => {
+  const mergedEdges = useMemo(() => {
     if (!data) return [];
     const baseIds = new Set(data.edges.map((e) => e.id));
     return [...data.edges, ...extraEdges.filter((e) => !baseIds.has(e.id))];
   }, [data, extraEdges]);
 
-  const [flowNodes, flowEdges] = React.useMemo(
-    () => computeLayout(mergedNodes, mergedEdges, data?.centerNodeId ?? '', highlightNodeId),
+  // M-9: validate centerNodeId exists in the node set
+  const effectiveCenterNodeId = useMemo(() => {
+    if (!data) return '';
+    const exists = data.nodes.some((n) => n.id === data.centerNodeId);
+    if (!exists) {
+      console.warn('[KnowledgeGraph] centerNodeId not found in nodes:', data.centerNodeId);
+    }
+    return exists ? data.centerNodeId : (data.nodes[0]?.id ?? '');
+  }, [data]);
 
-    [mergedNodes, mergedEdges, data?.centerNodeId, highlightNodeId]
-  );
+  // H-6: move layout computation to useEffect with startTransition to yield to browser
+  useEffect(() => {
+    startTransition(() => {
+      if (mergedNodes.length === 0) {
+        setFlowNodes([]);
+        setFlowEdges([]);
+        return;
+      }
+      const [nodes, edges] = computeForceLayout(mergedNodes, mergedEdges, {
+        width: 800,
+        height: 500,
+        centerNodeId: effectiveCenterNodeId,
+        highlightNodeId,
+        linkDistance: 80,
+        chargeStrength: -120,
+        collisionRadius: 36,
+        edgeStrokeWidth: 1.5,
+      });
+      setFlowNodes(nodes);
+      setFlowEdges(edges);
+    });
+  }, [mergedNodes, mergedEdges, effectiveCenterNodeId, highlightNodeId]);
 
   // Auto-center on highlighted node
-  React.useEffect(() => {
+  useEffect(() => {
     if (!highlightNodeId || flowNodes.length === 0) return;
     const target = flowNodes.find((n) => n.id === highlightNodeId);
     if (target) {
@@ -193,14 +154,14 @@ function GraphCanvas({
   }, [highlightNodeId, flowNodes, setCenter]);
 
   // Auto-fit when data loads
-  React.useEffect(() => {
+  useEffect(() => {
     if (flowNodes.length > 0) {
       requestAnimationFrame(() => {
         void fitView({ padding: 0.15, duration: 400 });
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.centerNodeId]);
+  }, [effectiveCenterNodeId]);
 
   async function handleNodeDoubleClick(nodeId: string) {
     try {
@@ -213,8 +174,10 @@ function GraphCanvas({
         const ids = new Set(prev.map((e) => e.id));
         return [...prev, ...neighbors.edges.filter((e) => !ids.has(e.id))];
       });
-    } catch {
-      // silently ignore neighbor expansion errors
+    } catch (err) {
+      // H-7: surface error to user instead of silently swallowing
+      console.error('Failed to expand node:', err);
+      toast.error('Failed to expand node. Please try again.');
     }
   }
 
@@ -222,7 +185,10 @@ function GraphCanvas({
     setSelectedNode(node);
   }
 
-  if (isLoading) {
+  const isLayoutComputing =
+    !isLoading && !isError && !!data && data.nodes.length > 0 && flowNodes.length === 0;
+
+  if (isLoading || isLayoutComputing) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <GraphEmptyState variant="loading" height={400} />
@@ -258,29 +224,38 @@ function GraphCanvas({
     <>
       {/* Graph canvas */}
       <div className="flex-1 min-h-0">
-        <ReactFlow
-          nodes={nodeTypedNodes}
-          edges={flowEdges}
-          nodeTypes={nodeTypes}
-          minZoom={0.3}
-          maxZoom={3}
-          fitView
-          fitViewOptions={{ padding: 0.15 }}
-          proOptions={{ hideAttribution: true }}
-          onNodeDoubleClick={(_evt, node) => void handleNodeDoubleClick(node.id)}
+        <ErrorBoundary
+          fallback={<GraphEmptyState variant="error" height={400} onRetry={() => void refetch()} />}
         >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={0.8} className="opacity-20" />
-          <MiniMap
-            position="bottom-right"
-            className="!bottom-4 !right-4"
-            nodeColor={(n) => {
-              const d = n.data as GraphNodeData | undefined;
-              if (d?.isCurrent) return '#2563eb';
-              return '#94a3b8';
-            }}
-          />
-          <Controls position="bottom-left" className="!bottom-4 !left-4" />
-        </ReactFlow>
+          <ReactFlow
+            nodes={nodeTypedNodes}
+            edges={flowEdges}
+            nodeTypes={nodeTypes}
+            minZoom={0.3}
+            maxZoom={3}
+            fitView
+            fitViewOptions={{ padding: 0.15 }}
+            proOptions={{ hideAttribution: true }}
+            onNodeDoubleClick={(_evt, node) => void handleNodeDoubleClick(node.id)}
+          >
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={20}
+              size={0.8}
+              className="opacity-20"
+            />
+            <MiniMap
+              position="bottom-right"
+              className="!bottom-4 !right-4"
+              nodeColor={(n) => {
+                const d = n.data as GraphNodeData | undefined;
+                if (d?.isCurrent) return '#2563eb';
+                return '#94a3b8';
+              }}
+            />
+            <Controls position="bottom-left" className="!bottom-4 !left-4" />
+          </ReactFlow>
+        </ErrorBoundary>
       </div>
 
       {/* Node detail panel */}
@@ -358,11 +333,17 @@ export function IssueKnowledgeGraphFull(props: IssueKnowledgeGraphFullProps) {
         <div className="w-px h-5 bg-border shrink-0" aria-hidden="true" />
 
         {/* Filter chips */}
-        <div className="flex items-center gap-1" role="group" aria-label="Filter by node type">
+        <div
+          className="flex items-center gap-1"
+          role="tablist"
+          aria-label="Filter graph by node type"
+        >
           {FILTER_CHIPS.map((chip) => (
             <button
               key={chip.nodeType}
+              role="tab"
               type="button"
+              aria-selected={activeFilter === chip.nodeType}
               onClick={() => setActiveFilter(chip.nodeType)}
               className={[
                 'rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors shrink-0',
@@ -371,7 +352,6 @@ export function IssueKnowledgeGraphFull(props: IssueKnowledgeGraphFullProps) {
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-muted text-muted-foreground hover:bg-muted/80',
               ].join(' ')}
-              aria-pressed={activeFilter === chip.nodeType}
             >
               {chip.label}
             </button>

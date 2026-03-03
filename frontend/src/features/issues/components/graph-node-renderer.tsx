@@ -23,6 +23,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { GraphNodeDTO, GraphNodeType } from '@/types/knowledge-graph';
+import { getGraphNodeStyle } from '@/features/issues/utils/graph-styles';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -34,32 +35,6 @@ export interface GraphNodeData extends Record<string, unknown> {
 }
 
 export type GraphFlowNode = Node<GraphNodeData, 'graphNode'>;
-
-// ── Color + abbreviation config ──────────────────────────────────────────
-
-interface NodeStyle {
-  bg: string;
-  text: string;
-  abbr: string;
-}
-
-const NODE_STYLES: Record<GraphNodeType | 'default', NodeStyle> = {
-  issue: { bg: '#3b82f6', text: '#ffffff', abbr: 'IS' },
-  note: { bg: '#10b981', text: '#ffffff', abbr: 'NO' },
-  decision: { bg: '#f59e0b', text: '#ffffff', abbr: 'DE' },
-  user: { bg: '#94a3b8', text: '#ffffff', abbr: 'US' },
-  pull_request: { bg: '#a855f7', text: '#ffffff', abbr: 'PR' },
-  code_reference: { bg: '#f97316', text: '#ffffff', abbr: 'CR' },
-  learned_pattern: { bg: '#14b8a6', text: '#ffffff', abbr: 'LP' },
-  conversation_summary: { bg: '#cbd5e1', text: '#000000', abbr: 'CS' },
-  skill_outcome: { bg: '#818cf8', text: '#ffffff', abbr: 'SO' },
-  project: { bg: '#6b7280', text: '#ffffff', abbr: 'PJ' },
-  cycle: { bg: '#6b7280', text: '#ffffff', abbr: 'CY' },
-  constitution_rule: { bg: '#6b7280', text: '#ffffff', abbr: 'CO' },
-  work_intent: { bg: '#6b7280', text: '#ffffff', abbr: 'WI' },
-  user_preference: { bg: '#6b7280', text: '#ffffff', abbr: 'UP' },
-  default: { bg: '#6b7280', text: '#ffffff', abbr: '??' },
-};
 
 const NODE_ICONS: Partial<Record<GraphNodeType, LucideIcon>> = {
   issue: CircleDot,
@@ -73,10 +48,6 @@ const NODE_ICONS: Partial<Record<GraphNodeType, LucideIcon>> = {
   skill_outcome: Star,
 };
 
-function getNodeStyle(nodeType: GraphNodeType): NodeStyle {
-  return NODE_STYLES[nodeType] ?? NODE_STYLES.default;
-}
-
 function renderNodeIcon(nodeType: GraphNodeType, color: string, size: number) {
   const IconComponent = NODE_ICONS[nodeType] ?? CircleDot;
   return <IconComponent style={{ color }} className="shrink-0" width={size} height={size} />;
@@ -87,7 +58,7 @@ function renderNodeIcon(nodeType: GraphNodeType, color: string, size: number) {
 export function GraphNodeComponent({ data }: NodeProps<GraphFlowNode>) {
   const { node, isCurrent = false, isHighlighted = false, onNodeClick } = data;
 
-  const style = getNodeStyle(node.nodeType);
+  const style = getGraphNodeStyle(node.nodeType);
 
   const width = isCurrent ? 48 : 40;
   const height = isCurrent ? 32 : 28;

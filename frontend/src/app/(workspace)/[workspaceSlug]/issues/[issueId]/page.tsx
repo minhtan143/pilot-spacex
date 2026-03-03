@@ -15,6 +15,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useParams, useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ import {
   useProjectCycles,
   useIssueKeyboardShortcuts,
 } from '@/features/issues/hooks';
+import { implementationPlanKeys } from '@/features/issues/hooks/use-implementation-plan';
 import { IssueNoteContext } from '@/features/issues/contexts/issue-note-context';
 import { useStore } from '@/stores';
 import { copyToClipboard } from '@/lib/copy-context';
@@ -113,6 +115,7 @@ const IssueDetailPage = observer(function IssueDetailPage() {
 
   const { workspaceStore, issueStore, aiStore } = useStore();
   const workspaceId = workspaceStore.currentWorkspace?.id ?? workspaceSlug;
+  const queryClient = useQueryClient();
 
   // -- TanStack Query hooks --
   const { data: issue, isLoading, isError, refetch } = useIssueDetail(workspaceId, issueId);
@@ -221,6 +224,9 @@ const IssueDetailPage = observer(function IssueDetailPage() {
       toast.success('Implementation plan generated', {
         description: `Plan with ${result.subagentCount} subagent${result.subagentCount !== 1 ? 's' : ''} ready. Open Clone → Plan tab to copy.`,
       });
+      void queryClient.invalidateQueries({
+        queryKey: implementationPlanKeys.detail(issueId),
+      });
     } catch {
       toast.error('Failed to generate plan', {
         description: 'Ensure AI context is generated first, then try again.',
@@ -228,7 +234,7 @@ const IssueDetailPage = observer(function IssueDetailPage() {
     } finally {
       setIsGeneratingPlan(false);
     }
-  }, [workspaceId, issueId]);
+  }, [workspaceId, issueId, queryClient]);
 
   const handleChatSend = useCallback(
     (prompt: string) => {

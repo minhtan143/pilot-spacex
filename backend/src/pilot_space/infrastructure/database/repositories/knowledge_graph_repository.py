@@ -15,244 +15,25 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, func, or_, select, text, union_all
 
 from pilot_space.domain.graph_edge import EdgeType, GraphEdge
 from pilot_space.domain.graph_node import GraphNode, NodeType
 from pilot_space.domain.graph_query import ScoredNode
 from pilot_space.infrastructure.database.models.graph_edge import GraphEdgeModel
 from pilot_space.infrastructure.database.models.graph_node import GraphNodeModel
+from pilot_space.infrastructure.database.repositories._graph_helpers import (
+    edge_model_to_domain,
+    hybrid_search_pg,
+    keyword_search,
+    node_model_to_domain,
+)
+from pilot_space.infrastructure.logging import get_logger
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-# Score fusion weights
-_EMBEDDING_WEIGHT = 0.5
-_TEXT_WEIGHT = 0.2
-_RECENCY_WEIGHT = 0.2
-_SECONDS_PER_DAY = 86_400.0
-
-
-# ---------------------------------------------------------------------------
-# Module-level ORM→domain mappers (shared with _graph_search helpers)
-# ---------------------------------------------------------------------------
-
-
-def _node_model_to_domain(model: GraphNodeModel) -> GraphNode:
-    """Map GraphNodeModel ORM to GraphNode domain object."""
-    embedding: list[float] | None = None
-    raw = model.embedding
-    if raw is not None:
-        if isinstance(raw, str):
-            embedding = [float(v) for v in raw.strip("[]").split(",") if v.strip()]
-        elif hasattr(raw, "__iter__"):
-            embedding = list(raw)
-
-    return GraphNode(
-        id=model.id,
-        workspace_id=model.workspace_id,
-        node_type=NodeType(model.node_type),
-        label=model.label,
-        content=model.content or "",
-        properties=dict(model.properties) if model.properties else {},
-        embedding=embedding,
-        user_id=model.user_id,
-        external_id=model.external_id,
-        created_at=model.created_at.replace(tzinfo=UTC)
-        if model.created_at.tzinfo is None
-        else model.created_at,
-        updated_at=model.updated_at.replace(tzinfo=UTC)
-        if model.updated_at.tzinfo is None
-        else model.updated_at,
-    )
-
-
-def _edge_model_to_domain(model: GraphEdgeModel) -> GraphEdge:
-    """Map GraphEdgeModel ORM to GraphEdge domain object."""
-    created_at = model.created_at
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=UTC)
-    return GraphEdge(
-        id=model.id,
-        source_id=model.source_id,
-        target_id=model.target_id,
-        edge_type=EdgeType(model.edge_type),
-        properties=dict(model.properties) if model.properties else {},
-        weight=model.weight,
-        created_at=created_at,
-    )
-
-
-async def _enrich_edge_density(
-    session: AsyncSession,
-    scored: list[ScoredNode],
-) -> list[ScoredNode]:
-    """Add edge_density_score to each ScoredNode.
-
-    Counts both outgoing and incoming edges so target-only nodes are not
-    penalised. Normalises by max_degree within the result set.
-    """
-    if not scored:
-        return scored
-
-    node_ids = [sn.node.id for sn in scored]
-    out_result = await session.execute(
-        select(GraphEdgeModel.source_id.label("node_id"), func.count().label("degree"))
-        .where(GraphEdgeModel.source_id.in_(node_ids))
-        .group_by(GraphEdgeModel.source_id)
-    )
-    in_result = await session.execute(
-        select(GraphEdgeModel.target_id.label("node_id"), func.count().label("degree"))
-        .where(GraphEdgeModel.target_id.in_(node_ids))
-        .group_by(GraphEdgeModel.target_id)
-    )
-    degree_map: dict[UUID, int] = {}
-    for row in out_result.fetchall():
-        degree_map[row.node_id] = degree_map.get(row.node_id, 0) + row.degree
-    for row in in_result.fetchall():
-        degree_map[row.node_id] = degree_map.get(row.node_id, 0) + row.degree
-
-    max_degree = max(degree_map.values(), default=1)
-    return [
-        ScoredNode(
-            node=sn.node,
-            score=sn.score,
-            embedding_score=sn.embedding_score,
-            text_score=sn.text_score,
-            recency_score=sn.recency_score,
-            edge_density_score=degree_map.get(sn.node.id, 0) / (max_degree + 1),
-        )
-        for sn in scored
-    ]
-
-
-async def _keyword_search(
-    session: AsyncSession,
-    query_text: str,
-    workspace_id: UUID,
-    node_types: list[NodeType] | None,
-    limit: int,
-) -> list[ScoredNode]:
-    """SQLite-compatible LIKE keyword search."""
-    pattern = f"%{query_text}%"
-    conditions: list[Any] = [
-        GraphNodeModel.workspace_id == workspace_id,
-        GraphNodeModel.is_deleted == False,  # noqa: E712
-        or_(GraphNodeModel.label.ilike(pattern), GraphNodeModel.content.ilike(pattern)),
-    ]
-    if node_types:
-        conditions.append(GraphNodeModel.node_type.in_([str(nt) for nt in node_types]))
-
-    stmt = (
-        select(GraphNodeModel)
-        .where(and_(*conditions))
-        .order_by(GraphNodeModel.updated_at.desc())
-        .limit(limit)
-    )
-    result = await session.execute(stmt)
-    models = result.scalars().all()
-
-    now = datetime.now(tz=UTC)
-    scored: list[ScoredNode] = []
-    for model in models:
-        updated = (
-            model.updated_at.replace(tzinfo=UTC)
-            if model.updated_at.tzinfo is None
-            else model.updated_at
-        )
-        age_days = (now - updated).total_seconds() / _SECONDS_PER_DAY
-        recency = 1.0 / (1.0 + age_days)
-        scored.append(
-            ScoredNode(
-                node=_node_model_to_domain(model),
-                score=_RECENCY_WEIGHT * recency + _TEXT_WEIGHT,
-                embedding_score=0.0,
-                text_score=1.0,
-                recency_score=recency,
-                edge_density_score=0.0,
-            )
-        )
-    return await _enrich_edge_density(session, scored)
-
-
-async def _hybrid_search_pg(
-    session: AsyncSession,
-    query_embedding: list[float],
-    query_text: str,
-    workspace_id: UUID,
-    node_types: list[NodeType] | None,
-    limit: int,
-) -> list[ScoredNode]:
-    """PostgreSQL hybrid search using pgvector cosine + ts_rank fusion."""
-    embedding_literal = "[" + ",".join(str(v) for v in query_embedding) + "]"
-    type_filter = ""
-    if node_types:
-        type_list = ",".join(f"'{nt!s}'" for nt in node_types)
-        type_filter = f"AND node_type IN ({type_list})"
-
-    raw = text(f"""
-        SELECT id,
-            (1 - (embedding <=> CAST(:embedding AS vector(1536)))) AS embedding_score,
-            COALESCE(ts_rank(
-                to_tsvector('english', COALESCE(content,'') || ' ' || COALESCE(label,'')),
-                plainto_tsquery('english', :query_text)
-            ), 0.0) AS text_score,
-            1.0 / (1.0 + EXTRACT(EPOCH FROM (NOW() - updated_at)) / :spd) AS recency_score
-        FROM graph_nodes
-        WHERE workspace_id = :workspace_id AND is_deleted = false
-          AND embedding IS NOT NULL {type_filter}
-        ORDER BY (
-            :ew * (1 - (embedding <=> CAST(:embedding AS vector(1536))))
-            + :tw * COALESCE(ts_rank(
-                to_tsvector('english', COALESCE(content,'') || ' ' || COALESCE(label,'')),
-                plainto_tsquery('english', :query_text)), 0.0)
-            + :rw * (1.0 / (1.0 + EXTRACT(EPOCH FROM (NOW() - updated_at)) / :spd))
-        ) DESC LIMIT :limit
-    """)
-    rows = await session.execute(
-        raw,
-        {
-            "embedding": embedding_literal,
-            "query_text": query_text,
-            "workspace_id": str(workspace_id),
-            "spd": _SECONDS_PER_DAY,
-            "ew": _EMBEDDING_WEIGHT,
-            "tw": _TEXT_WEIGHT,
-            "rw": _RECENCY_WEIGHT,
-            "limit": limit,
-        },
-    )
-    row_maps = rows.mappings().all()
-    if not row_maps:
-        return []
-
-    node_ids = [row["id"] for row in row_maps]
-    model_result = await session.execute(
-        select(GraphNodeModel).where(GraphNodeModel.id.in_(node_ids))
-    )
-    model_map: dict[UUID, GraphNodeModel] = {m.id: m for m in model_result.scalars().all()}
-
-    scored: list[ScoredNode] = []
-    for row in row_maps:
-        model = model_map.get(row["id"])
-        if model is None:
-            continue
-        emb, txt, rec = (
-            float(row["embedding_score"]),
-            float(row["text_score"]),
-            float(row["recency_score"]),
-        )
-        scored.append(
-            ScoredNode(
-                node=_node_model_to_domain(model),
-                score=_EMBEDDING_WEIGHT * emb + _TEXT_WEIGHT * txt + _RECENCY_WEIGHT * rec,
-                embedding_score=emb,
-                text_score=txt,
-                recency_score=rec,
-                edge_density_score=0.0,
-            )
-        )
-    return await _enrich_edge_density(session, scored)
+logger = get_logger(__name__)
 
 
 class KnowledgeGraphRepository:
@@ -268,8 +49,8 @@ class KnowledgeGraphRepository:
         self._session = session
 
     # Expose mappers as class attributes for external callers
-    _model_to_domain = staticmethod(_node_model_to_domain)
-    _edge_model_to_domain = staticmethod(_edge_model_to_domain)
+    _model_to_domain = staticmethod(node_model_to_domain)
+    edge_model_to_domain = staticmethod(edge_model_to_domain)
 
     def _is_sqlite(self) -> bool:
         """Return True when the session is connected to SQLite."""
@@ -322,7 +103,7 @@ class KnowledgeGraphRepository:
         self._session.add(model)
         await self._session.flush()
         await self._session.refresh(model)
-        return _node_model_to_domain(model)
+        return node_model_to_domain(model)
 
     async def _update_node_model(self, model: GraphNodeModel, node: GraphNode) -> GraphNode:
         model.label = node.label
@@ -332,7 +113,7 @@ class KnowledgeGraphRepository:
             model.embedding = node.embedding
         await self._session.flush()
         await self._session.refresh(model)
-        return _node_model_to_domain(model)
+        return node_model_to_domain(model)
 
     # ------------------------------------------------------------------
     # Edge upsert
@@ -351,13 +132,24 @@ class KnowledgeGraphRepository:
             existing.properties = edge.properties
             await self._session.flush()
             await self._session.refresh(existing)
-            return _edge_model_to_domain(existing)
+            return edge_model_to_domain(existing)
 
-        # Derive workspace_id from source node
+        # Derive workspace_id from source node; validate both endpoints exist.
         ws_result = await self._session.execute(
             select(GraphNodeModel.workspace_id).where(GraphNodeModel.id == edge.source_id)
         )
-        workspace_id = ws_result.scalar_one()
+        workspace_id = ws_result.scalar_one_or_none()
+        if workspace_id is None:
+            raise ValueError(f"Source node {edge.source_id} not found")
+
+        target_ws = (
+            await self._session.execute(
+                select(GraphNodeModel.workspace_id).where(GraphNodeModel.id == edge.target_id)
+            )
+        ).scalar_one_or_none()
+        if target_ws != workspace_id:
+            raise ValueError(f"Target node {edge.target_id} not in same workspace or not found")
+
         model = GraphEdgeModel(
             id=edge.id,
             source_id=edge.source_id,
@@ -370,7 +162,7 @@ class KnowledgeGraphRepository:
         self._session.add(model)
         await self._session.flush()
         await self._session.refresh(model)
-        return _edge_model_to_domain(model)
+        return edge_model_to_domain(model)
 
     # ------------------------------------------------------------------
     # Neighbor traversal
@@ -381,17 +173,23 @@ class KnowledgeGraphRepository:
         node_id: UUID,
         edge_types: list[EdgeType] | None = None,
         depth: int = 1,
+        workspace_id: UUID | None = None,
     ) -> list[GraphNode]:
         """Return nodes reachable from node_id within depth hops.
 
         Uses recursive CTE on PostgreSQL; iterative BFS on SQLite.
+        workspace_id is required to enforce cross-workspace boundary.
         """
         if self._is_sqlite():
-            return await self._get_neighbors_bfs(node_id, edge_types, depth)
-        return await self._get_neighbors_cte(node_id, edge_types, depth)
+            return await self._get_neighbors_bfs(node_id, edge_types, depth, workspace_id)
+        return await self._get_neighbors_cte(node_id, edge_types, depth, workspace_id)
 
     async def _get_neighbors_bfs(
-        self, node_id: UUID, edge_types: list[EdgeType] | None, max_depth: int
+        self,
+        node_id: UUID,
+        edge_types: list[EdgeType] | None,
+        max_depth: int,
+        workspace_id: UUID | None = None,
     ) -> list[GraphNode]:
         visited: set[UUID] = {node_id}
         frontier: deque[UUID] = deque([node_id])
@@ -401,7 +199,7 @@ class KnowledgeGraphRepository:
                 break
             next_frontier: list[UUID] = []
             for current_id in frontier:
-                for nid in await self._direct_neighbors(current_id, edge_types):
+                for nid in await self._direct_neighbors(current_id, edge_types, workspace_id):
                     if nid not in visited:
                         visited.add(nid)
                         result_ids.append(nid)
@@ -409,64 +207,109 @@ class KnowledgeGraphRepository:
             frontier = deque(next_frontier)
         if not result_ids:
             return []
-        rows = await self._session.execute(
-            select(GraphNodeModel).where(
-                GraphNodeModel.id.in_(result_ids),
-                GraphNodeModel.is_deleted == False,  # noqa: E712
-            )
-        )
-        return [_node_model_to_domain(m) for m in rows.scalars().all()]
+        conditions: list[Any] = [
+            GraphNodeModel.id.in_(result_ids),
+            GraphNodeModel.is_deleted == False,  # noqa: E712
+        ]
+        if workspace_id is not None:
+            conditions.append(GraphNodeModel.workspace_id == workspace_id)
+        rows = await self._session.execute(select(GraphNodeModel).where(and_(*conditions)))
+        return [node_model_to_domain(m) for m in rows.scalars().all()]
 
     async def _direct_neighbors(
-        self, node_id: UUID, edge_types: list[EdgeType] | None
+        self,
+        node_id: UUID,
+        edge_types: list[EdgeType] | None,
+        workspace_id: UUID | None = None,
     ) -> list[UUID]:
-        """IDs of directly adjacent nodes (both directions)."""
+        """IDs of directly adjacent non-deleted nodes (both directions).
+
+        Joining GraphNodeModel ensures soft-deleted nodes are excluded at the
+        query level rather than filtered after the fact (M-3 fix).
+        """
+        edge_type_strs = [str(et) for et in edge_types] if edge_types else None
+
         conditions_out: list[Any] = [GraphEdgeModel.source_id == node_id]
         conditions_in: list[Any] = [GraphEdgeModel.target_id == node_id]
-        if edge_types:
-            type_strs = [str(et) for et in edge_types]
-            conditions_out.append(GraphEdgeModel.edge_type.in_(type_strs))
-            conditions_in.append(GraphEdgeModel.edge_type.in_(type_strs))
-        stmt = (
+        if edge_type_strs is not None:
+            conditions_out.append(GraphEdgeModel.edge_type.in_(edge_type_strs))
+            conditions_in.append(GraphEdgeModel.edge_type.in_(edge_type_strs))
+        if workspace_id is not None:
+            conditions_out.append(GraphEdgeModel.workspace_id == workspace_id)
+            conditions_in.append(GraphEdgeModel.workspace_id == workspace_id)
+
+        # Join to graph_nodes so soft-deleted neighbors are excluded at DB level (M-3).
+        stmt_out = (
             select(GraphEdgeModel.target_id)
-            .where(and_(*conditions_out))
-            .union(select(GraphEdgeModel.source_id).where(and_(*conditions_in)))
+            .join(GraphNodeModel, GraphEdgeModel.target_id == GraphNodeModel.id)
+            .where(and_(*conditions_out), GraphNodeModel.is_deleted == False)  # noqa: E712
         )
+        stmt_in = (
+            select(GraphEdgeModel.source_id)
+            .join(GraphNodeModel, GraphEdgeModel.source_id == GraphNodeModel.id)
+            .where(and_(*conditions_in), GraphNodeModel.is_deleted == False)  # noqa: E712
+        )
+        stmt = stmt_out.union(stmt_in)
         return list((await self._session.execute(stmt)).scalars().all())
 
     async def _get_neighbors_cte(
-        self, node_id: UUID, edge_types: list[EdgeType] | None, max_depth: int
+        self,
+        node_id: UUID,
+        edge_types: list[EdgeType] | None,
+        max_depth: int,
+        workspace_id: UUID | None = None,
     ) -> list[GraphNode]:
-        """Recursive CTE traversal for PostgreSQL."""
-        ef = ""
-        if edge_types:
-            ef = "AND edge_type IN (" + ",".join(f"'{et!s}'" for et in edge_types) + ")"
-        raw = text(f"""
+        """Recursive CTE traversal for PostgreSQL.
+
+        edge_types filtering uses ANY(:edge_types) to prevent SQL injection
+        (C-1). workspace_id is pushed into the CTE anchor and final filter to
+        enforce cross-workspace boundary (C-2).
+        """
+        # Only static SQL string fragments are f-string-interpolated — no user
+        # data ever enters the SQL text directly.
+        edge_type_clause = "AND edge_type = ANY(:edge_types)" if edge_types else ""
+        ws_clause = "AND workspace_id = :workspace_id" if workspace_id is not None else ""
+        ws_node_clause = "AND gn.workspace_id = :workspace_id" if workspace_id is not None else ""
+
+        raw = text(
+            f"""
             WITH RECURSIVE neighbors(id, depth) AS (
-                SELECT target_id, 1 FROM graph_edges WHERE source_id = :nid {ef}
+                SELECT target_id, 1 FROM graph_edges
+                  WHERE source_id = :nid {edge_type_clause} {ws_clause}
                 UNION ALL
-                SELECT source_id, 1 FROM graph_edges WHERE target_id = :nid {ef}
+                SELECT source_id, 1 FROM graph_edges
+                  WHERE target_id = :nid {edge_type_clause} {ws_clause}
                 UNION ALL
                 SELECT e.target_id, n.depth+1 FROM graph_edges e
-                  JOIN neighbors n ON e.source_id = n.id WHERE n.depth < :md {ef}
+                  JOIN neighbors n ON e.source_id = n.id
+                  WHERE n.depth < :md {edge_type_clause} {ws_clause}
                 UNION ALL
                 SELECT e.source_id, n.depth+1 FROM graph_edges e
-                  JOIN neighbors n ON e.target_id = n.id WHERE n.depth < :md {ef}
+                  JOIN neighbors n ON e.target_id = n.id
+                  WHERE n.depth < :md {edge_type_clause} {ws_clause}
             )
             SELECT DISTINCT gn.id FROM graph_nodes gn JOIN neighbors nb ON gn.id = nb.id
-            WHERE gn.is_deleted = false AND gn.id != :nid
-        """)
-        rows = await self._session.execute(raw, {"nid": str(node_id), "md": max_depth})
+            WHERE gn.is_deleted = false AND gn.id != :nid {ws_node_clause}
+            """
+        )
+        params: dict[str, object] = {"nid": str(node_id), "md": max_depth}
+        if edge_types:
+            params["edge_types"] = [str(et) for et in edge_types]
+        if workspace_id is not None:
+            params["workspace_id"] = str(workspace_id)
+
+        rows = await self._session.execute(raw, params)
         neighbor_ids = [row[0] for row in rows.fetchall()]
         if not neighbor_ids:
             return []
-        result = await self._session.execute(
-            select(GraphNodeModel).where(
-                GraphNodeModel.id.in_(neighbor_ids),
-                GraphNodeModel.is_deleted == False,  # noqa: E712
-            )
-        )
-        return [_node_model_to_domain(m) for m in result.scalars().all()]
+        node_conditions: list[Any] = [
+            GraphNodeModel.id.in_(neighbor_ids),
+            GraphNodeModel.is_deleted == False,  # noqa: E712
+        ]
+        if workspace_id is not None:
+            node_conditions.append(GraphNodeModel.workspace_id == workspace_id)
+        result = await self._session.execute(select(GraphNodeModel).where(and_(*node_conditions)))
+        return [node_model_to_domain(m) for m in result.scalars().all()]
 
     # ------------------------------------------------------------------
     # Hybrid search (delegates to module-level helpers)
@@ -486,8 +329,8 @@ class KnowledgeGraphRepository:
         is provided. Fusion: 0.5 * embedding + 0.2 * text + 0.2 * recency.
         """
         if self._is_sqlite() or not query_embedding:
-            return await _keyword_search(self._session, query_text, workspace_id, node_types, limit)
-        return await _hybrid_search_pg(
+            return await keyword_search(self._session, query_text, workspace_id, node_types, limit)
+        return await hybrid_search_pg(
             self._session, query_embedding, query_text, workspace_id, node_types, limit
         )
 
@@ -500,10 +343,12 @@ class KnowledgeGraphRepository:
         root_id: UUID,
         max_depth: int = 2,
         max_nodes: int = 50,
+        workspace_id: UUID | None = None,
     ) -> tuple[list[GraphNode], list[GraphEdge]]:
         """BFS subgraph rooted at root_id, capped at max_nodes.
 
         Pruning priority: root first, then degree DESC, then recency DESC.
+        workspace_id enforces cross-workspace isolation during BFS (C-2).
         """
         visited: set[UUID] = {root_id}
         frontier: list[UUID] = [root_id]
@@ -513,7 +358,7 @@ class KnowledgeGraphRepository:
                 break
             next_frontier: list[UUID] = []
             for current_id in frontier:
-                for nid in await self._direct_neighbors(current_id, None):
+                for nid in await self._direct_neighbors(current_id, None, workspace_id):
                     if nid not in visited:
                         visited.add(nid)
                         all_ids.append(nid)
@@ -529,27 +374,37 @@ class KnowledgeGraphRepository:
                 GraphNodeModel.is_deleted == False,  # noqa: E712
             )
         )
-        nodes = [_node_model_to_domain(m) for m in node_result.scalars().all()]
+        nodes = [node_model_to_domain(m) for m in node_result.scalars().all()]
         edge_result = await self._session.execute(
             select(GraphEdgeModel).where(
                 GraphEdgeModel.source_id.in_(all_ids),
                 GraphEdgeModel.target_id.in_(all_ids),
             )
         )
-        edges = [_edge_model_to_domain(m) for m in edge_result.scalars().all()]
+        edges = [edge_model_to_domain(m) for m in edge_result.scalars().all()]
         return nodes, edges
 
     async def _prioritize_nodes(
         self, node_ids: list[UUID], root_id: UUID, max_nodes: int
     ) -> list[UUID]:
-        degree_result = await self._session.execute(
+        # Count outgoing and incoming edges separately, then union and sum so
+        # that nodes which only receive edges still accumulate degree (H-1).
+        out_q = (
             select(GraphEdgeModel.source_id.label("node_id"), func.count().label("cnt"))
-            .where(
-                or_(GraphEdgeModel.source_id.in_(node_ids), GraphEdgeModel.target_id.in_(node_ids))
-            )
+            .where(GraphEdgeModel.source_id.in_(node_ids))
             .group_by(GraphEdgeModel.source_id)
         )
-        degree_map: dict[UUID, int] = {row.node_id: row.cnt for row in degree_result.fetchall()}
+        in_q = (
+            select(GraphEdgeModel.target_id.label("node_id"), func.count().label("cnt"))
+            .where(GraphEdgeModel.target_id.in_(node_ids))
+            .group_by(GraphEdgeModel.target_id)
+        )
+        combined = union_all(out_q, in_q).subquery()
+        degree_q = select(
+            combined.c.node_id, func.sum(combined.c.cnt).label("total_degree")
+        ).group_by(combined.c.node_id)
+        degree_result = await self._session.execute(degree_q)
+        degree_map: dict[UUID, int] = {row.node_id: row.total_degree for row in degree_result}
         models = {
             m.id: m
             for m in (
@@ -593,7 +448,7 @@ class KnowledgeGraphRepository:
             .limit(limit)
         )
         return [
-            _node_model_to_domain(m) for m in (await self._session.execute(stmt)).scalars().all()
+            node_model_to_domain(m) for m in (await self._session.execute(stmt)).scalars().all()
         ]
 
     # ------------------------------------------------------------------

@@ -32,8 +32,9 @@ import { CollapsibleSection } from './collapsible-section';
 import { CreateBranchPopover } from './create-branch-popover';
 import { useImplementationPlan } from '../hooks/use-implementation-plan';
 import { useCopyFeedback } from '../hooks/use-copy-feedback';
+import { getGraphNodeStyle } from '@/features/issues/utils/graph-styles';
 import type { IntegrationLink } from '@/types';
-import type { GraphNodeDTO, GraphNodeType } from '@/types/knowledge-graph';
+import type { GraphNodeDTO } from '@/types/knowledge-graph';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -70,31 +71,6 @@ const PR_STATE: Record<string, string> = {
 const LINK_CLS =
   'group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 const EXT_ICO = 'size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-50';
-
-// ---------------------------------------------------------------------------
-// Node type color + abbreviation mapping (self-contained, no Unit 9 import)
-// ---------------------------------------------------------------------------
-
-const NODE_TYPE_CONFIG: Record<GraphNodeType, { color: string; abbr: string; label: string }> = {
-  issue: { color: 'bg-blue-500', abbr: 'IS', label: 'Issue' },
-  note: { color: 'bg-green-500', abbr: 'NO', label: 'Note' },
-  project: { color: 'bg-violet-500', abbr: 'PR', label: 'Project' },
-  cycle: { color: 'bg-orange-500', abbr: 'CY', label: 'Cycle' },
-  user: { color: 'bg-pink-500', abbr: 'US', label: 'User' },
-  pull_request: { color: 'bg-purple-500', abbr: 'GH', label: 'Pull Request' },
-  code_reference: { color: 'bg-cyan-500', abbr: 'CR', label: 'Code' },
-  decision: { color: 'bg-yellow-500', abbr: 'DE', label: 'Decision' },
-  skill_outcome: { color: 'bg-teal-500', abbr: 'SK', label: 'Skill' },
-  conversation_summary: { color: 'bg-indigo-500', abbr: 'CS', label: 'Summary' },
-  learned_pattern: { color: 'bg-emerald-500', abbr: 'LP', label: 'Pattern' },
-  constitution_rule: { color: 'bg-red-500', abbr: 'RU', label: 'Rule' },
-  work_intent: { color: 'bg-amber-500', abbr: 'WI', label: 'Intent' },
-  user_preference: { color: 'bg-rose-500', abbr: 'UP', label: 'Preference' },
-};
-
-function getNodeConfig(type: GraphNodeType) {
-  return NODE_TYPE_CONFIG[type] ?? { color: 'bg-gray-400', abbr: '??', label: type };
-}
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -312,9 +288,9 @@ export function GitHubImplementationSection({
 // ---------------------------------------------------------------------------
 
 interface ImplementContextShape {
-  suggested_branch?: string;
-  ai_context?: {
-    tasks_checklist?: string[];
+  suggestedBranch?: string;
+  aiContext?: {
+    tasksChecklist?: string[];
   };
 }
 
@@ -341,7 +317,7 @@ function ImplementationPlanPanel({
   const interactiveCmd = `pilot implement ${issueIdentifier}`;
   const oneshotCmd = `pilot implement ${issueIdentifier} --oneshot`;
 
-  const tasks = implementContext.ai_context?.tasks_checklist ?? [];
+  const tasks = implementContext.aiContext?.tasksChecklist ?? [];
 
   return (
     <div
@@ -349,11 +325,11 @@ function ImplementationPlanPanel({
       data-testid="implementation-plan-panel"
     >
       {/* Branch name */}
-      {implementContext.suggested_branch && (
+      {implementContext.suggestedBranch && (
         <div>
           <p className="px-2 mb-1 text-xs font-medium text-muted-foreground">Branch</p>
           <code className="block mx-2 rounded bg-muted px-2 py-1 font-mono text-xs truncate">
-            {implementContext.suggested_branch}
+            {implementContext.suggestedBranch}
           </code>
         </div>
       )}
@@ -424,7 +400,7 @@ function ImplementationPlanPanel({
           </p>
           <ul className="px-2 space-y-1" aria-label="Affected graph nodes">
             {affectedNodes.map((node) => {
-              const cfg = getNodeConfig(node.nodeType);
+              const style = getGraphNodeStyle(node.nodeType);
               return (
                 <li key={node.id}>
                   <button
@@ -440,12 +416,12 @@ function ImplementationPlanPanel({
                     data-testid={`node-chip-${node.id}`}
                   >
                     <span
-                      className={cn('size-2 shrink-0 rounded-full', cfg.color)}
+                      className={cn('size-2 shrink-0 rounded-full', style.tailwind)}
                       aria-hidden="true"
                     />
                     <span className="truncate text-foreground">{node.label}</span>
                     <span className="ml-auto shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      {cfg.abbr}
+                      {style.abbr}
                     </span>
                   </button>
                 </li>
