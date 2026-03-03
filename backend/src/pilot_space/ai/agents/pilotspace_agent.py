@@ -28,7 +28,6 @@ from pilot_space.ai.agents.pilotspace_intent_pipeline import (
     extract_and_persist_to_graph,
     recall_graph_context,
     run_intent_pipeline_step,
-    save_skill_outcome_to_memory,
 )
 from pilot_space.ai.agents.pilotspace_stream_utils import (
     build_graph_search_service_for_session,
@@ -643,7 +642,8 @@ class PilotSpaceAgent(StreamingSDKBaseAgent[ChatInput, ChatOutput]):
                             _graph_write_svc = build_graph_write_service_for_session(
                                 db_session, self._graph_queue_client
                             )
-                            if _graph_write_svc and assistant_texts:
+                            if assistant_texts:
+                                _ctx_issue = input_data.context.get("issue_id")
                                 await extract_and_persist_to_graph(
                                     graph_write_service=_graph_write_svc,
                                     workspace_id=context.workspace_id,
@@ -652,14 +652,7 @@ class PilotSpaceAgent(StreamingSDKBaseAgent[ChatInput, ChatOutput]):
                                         {"role": "user", "content": input_data.message},
                                         {"role": "assistant", "content": assistant_texts[-1]},
                                     ],
-                                )
-                            elif assistant_texts:
-                                # Fallback: legacy memory save when graph write not available
-                                outcome_summary = " ".join(t[:200] for t in assistant_texts)[:500]
-                                await save_skill_outcome_to_memory(
-                                    memory_save_service=self._memory_save_service,
-                                    workspace_id=context.workspace_id,
-                                    content=outcome_summary,
+                                    issue_id=UUID(_ctx_issue) if _ctx_issue else None,
                                 )
 
                     await client.disconnect()
