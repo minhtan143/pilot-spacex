@@ -63,7 +63,7 @@ class GraphNodeModel(WorkspaceScopedModel):
     label         Short human-readable label for display / graph rendering.
     content       Full text content; used for semantic search & summarisation.
     properties    Arbitrary JSONB bag for node-type-specific metadata.
-    embedding     vector(1536) — OpenAI text-embedding-3-small output.
+    embedding     vector(768) — 768-dim embedding (Ollama nomic-embed-text / Gemini).
     created_at    Auto-set by server on INSERT (inherited from TimestampMixin).
     updated_at    Auto-set by server on UPDATE (inherited from TimestampMixin).
     is_deleted    Soft-delete flag (inherited from SoftDeleteMixin).
@@ -122,7 +122,7 @@ class GraphNodeModel(WorkspaceScopedModel):
         server_default="{}",
     )
 
-    # embedding: vector(1536) at DB level; Text fallback for SQLite tests.
+    # embedding: vector(768) at DB level (resized by migration 057); Text fallback for SQLite tests.
     # Stored as list[float] in domain; serialised as text in SQLite.
     embedding: Mapped[Any | None] = mapped_column(
         _VECTOR_TYPE,

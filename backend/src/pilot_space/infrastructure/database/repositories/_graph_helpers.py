@@ -24,11 +24,19 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Score fusion weights
-_EMBEDDING_WEIGHT = 0.5
-_TEXT_WEIGHT = 0.2
-_RECENCY_WEIGHT = 0.2
-_SECONDS_PER_DAY = 86_400.0
+# Score fusion weights (shared with graph_search_service)
+GRAPH_EMBEDDING_WEIGHT = 0.5
+GRAPH_TEXT_WEIGHT = 0.2
+GRAPH_RECENCY_WEIGHT = 0.2
+GRAPH_SECONDS_PER_DAY = 86_400.0
+
+# Embedding vector dimension — must match migration 057 (resized from 1536 → 768)
+GRAPH_EMBEDDING_DIMS = 768
+
+
+def _ensure_utc_aware(dt: datetime) -> datetime:
+    """Return dt with UTC tzinfo, adding it if the datetime is naive."""
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
 
 
 def node_model_to_domain(model: GraphNodeModel) -> GraphNode:
@@ -58,20 +66,13 @@ def node_model_to_domain(model: GraphNodeModel) -> GraphNode:
         embedding=embedding,
         user_id=model.user_id,
         external_id=model.external_id,
-        created_at=model.created_at.replace(tzinfo=UTC)
-        if model.created_at.tzinfo is None
-        else model.created_at,
-        updated_at=model.updated_at.replace(tzinfo=UTC)
-        if model.updated_at.tzinfo is None
-        else model.updated_at,
+        created_at=_ensure_utc_aware(model.created_at),
+        updated_at=_ensure_utc_aware(model.updated_at),
     )
 
 
 def edge_model_to_domain(model: GraphEdgeModel) -> GraphEdge:
     """Map GraphEdgeModel ORM to GraphEdge domain object."""
-    created_at = model.created_at
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=UTC)
     return GraphEdge(
         id=model.id,
         source_id=model.source_id,
@@ -79,7 +80,7 @@ def edge_model_to_domain(model: GraphEdgeModel) -> GraphEdge:
         edge_type=EdgeType(model.edge_type),
         properties=dict(model.properties) if model.properties else {},
         weight=model.weight,
-        created_at=created_at,
+        created_at=_ensure_utc_aware(model.created_at),
     )
 
 
@@ -155,17 +156,13 @@ async def keyword_search(
     now = datetime.now(tz=UTC)
     scored: list[ScoredNode] = []
     for model in models:
-        updated = (
-            model.updated_at.replace(tzinfo=UTC)
-            if model.updated_at.tzinfo is None
-            else model.updated_at
-        )
-        age_days = (now - updated).total_seconds() / _SECONDS_PER_DAY
+        updated = _ensure_utc_aware(model.updated_at)
+        age_days = (now - updated).total_seconds() / GRAPH_SECONDS_PER_DAY
         recency = 1.0 / (1.0 + age_days)
         scored.append(
             ScoredNode(
                 node=node_model_to_domain(model),
-                score=_RECENCY_WEIGHT * recency + _TEXT_WEIGHT,
+                score=GRAPH_RECENCY_WEIGHT * recency + GRAPH_TEXT_WEIGHT,
                 embedding_score=0.0,
                 text_score=1.0,
                 recency_score=recency,
@@ -192,7 +189,7 @@ async def hybrid_search_pg(
 
     raw = text(f"""
         SELECT id,
-            (1 - (embedding <=> CAST(:embedding AS vector(1536)))) AS embedding_score,
+            (1 - (embedding <=> CAST(:embedding AS vector({GRAPH_EMBEDDING_DIMS})))) AS embedding_score,
             COALESCE(ts_rank(
                 to_tsvector('english', COALESCE(content,'') || ' ' || COALESCE(label,'')),
                 plainto_tsquery('english', :query_text)
@@ -202,7 +199,7 @@ async def hybrid_search_pg(
         WHERE workspace_id = :workspace_id AND is_deleted = false
           AND embedding IS NOT NULL {node_type_filter}
         ORDER BY (
-            :ew * (1 - (embedding <=> CAST(:embedding AS vector(1536))))
+            :ew * (1 - (embedding <=> CAST(:embedding AS vector({GRAPH_EMBEDDING_DIMS}))))
             + :tw * COALESCE(ts_rank(
                 to_tsvector('english', COALESCE(content,'') || ' ' || COALESCE(label,'')),
                 plainto_tsquery('english', :query_text)), 0.0)
@@ -213,10 +210,10 @@ async def hybrid_search_pg(
         "embedding": embedding_literal,
         "query_text": query_text,
         "workspace_id": str(workspace_id),
-        "spd": _SECONDS_PER_DAY,
-        "ew": _EMBEDDING_WEIGHT,
-        "tw": _TEXT_WEIGHT,
-        "rw": _RECENCY_WEIGHT,
+        "spd": GRAPH_SECONDS_PER_DAY,
+        "ew": GRAPH_EMBEDDING_WEIGHT,
+        "tw": GRAPH_TEXT_WEIGHT,
+        "rw": GRAPH_RECENCY_WEIGHT,
         "limit": limit,
     }
     if node_types_param is not None:
@@ -245,7 +242,9 @@ async def hybrid_search_pg(
         scored.append(
             ScoredNode(
                 node=node_model_to_domain(model),
-                score=_EMBEDDING_WEIGHT * emb + _TEXT_WEIGHT * txt + _RECENCY_WEIGHT * rec,
+                score=GRAPH_EMBEDDING_WEIGHT * emb
+                + GRAPH_TEXT_WEIGHT * txt
+                + GRAPH_RECENCY_WEIGHT * rec,
                 embedding_score=emb,
                 text_score=txt,
                 recency_score=rec,

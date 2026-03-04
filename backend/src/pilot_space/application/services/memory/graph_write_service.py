@@ -355,8 +355,7 @@ class GraphWriteService:
                 "enqueued_at": enqueued_at,
             }
             try:
-                assert self._queue is not None  # only called when queue is present
-                await self._queue.enqueue(QueueName.AI_NORMAL, job_payload)
+                await self._queue.enqueue(QueueName.AI_NORMAL, job_payload)  # type: ignore[union-attr]
                 return True
             except Exception:
                 logger.error(
