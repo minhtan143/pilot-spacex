@@ -140,6 +140,14 @@ def upgrade() -> None:
         )
     )
 
+    # B-tree: recency pruning queries on updated_at (used by _prioritize_nodes)
+    op.execute(
+        text(
+            "CREATE INDEX ix_graph_nodes_workspace_updated "
+            "ON graph_nodes (workspace_id, updated_at DESC)"
+        )
+    )
+
     # ------------------------------------------------------------------
     # graph_edges indexes
     # ------------------------------------------------------------------
@@ -147,6 +155,13 @@ def upgrade() -> None:
     op.execute(text("CREATE INDEX ix_graph_edges_target_id ON graph_edges (target_id)"))
     op.execute(
         text("CREATE INDEX ix_graph_edges_workspace_type ON graph_edges (workspace_id, edge_type)")
+    )
+    # Composite indexes for BFS edge-type filtering (source/target + edge_type together)
+    op.execute(
+        text("CREATE INDEX ix_graph_edges_source_type ON graph_edges (source_id, edge_type)")
+    )
+    op.execute(
+        text("CREATE INDEX ix_graph_edges_target_type ON graph_edges (target_id, edge_type)")
     )
 
     # ------------------------------------------------------------------

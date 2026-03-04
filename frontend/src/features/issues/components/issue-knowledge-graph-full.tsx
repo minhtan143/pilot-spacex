@@ -13,7 +13,7 @@
  */
 
 import * as React from 'react';
-import { useEffect, startTransition, useState, useMemo } from 'react';
+import { useCallback, useEffect, startTransition, useState, useMemo } from 'react';
 import { ArrowLeft, X } from 'lucide-react';
 import {
   ReactFlow,
@@ -89,8 +89,11 @@ function GraphCanvas({
   const [flowNodes, setFlowNodes] = useState<Node[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
 
-  const nodeTypes_: GraphNodeType[] | undefined =
-    activeFilter === 'all' ? undefined : [activeFilter];
+  // Memoize to prevent TanStack Query key churn from new array refs on each render
+  const nodeTypes_ = useMemo<GraphNodeType[] | undefined>(
+    () => (activeFilter === 'all' ? undefined : [activeFilter]),
+    [activeFilter]
+  );
 
   const { data, isLoading, isError, refetch } = useIssueKnowledgeGraph(workspaceId, issueId, {
     depth,
@@ -163,23 +166,31 @@ function GraphCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveCenterNodeId]);
 
-  async function handleNodeDoubleClick(nodeId: string) {
-    try {
-      const neighbors = await knowledgeGraphApi.getNodeNeighbors(workspaceId, nodeId, depth + 1);
-      setExtraNodes((prev) => {
-        const ids = new Set(prev.map((n) => n.id));
-        return [...prev, ...neighbors.nodes.filter((n) => !ids.has(n.id))];
-      });
-      setExtraEdges((prev) => {
-        const ids = new Set(prev.map((e) => e.id));
-        return [...prev, ...neighbors.edges.filter((e) => !ids.has(e.id))];
-      });
-    } catch (err) {
-      // H-7: surface error to user instead of silently swallowing
-      console.error('Failed to expand node:', err);
-      toast.error('Failed to expand node. Please try again.');
-    }
-  }
+  const handleNodeDoubleClick = useCallback(
+    async (nodeId: string) => {
+      const totalNodes = (data?.nodes.length ?? 0) + extraNodes.length;
+      if (totalNodes >= 200) {
+        toast.warning('Graph limit reached (200 nodes). Clear filters to reset the view.');
+        return;
+      }
+      try {
+        const neighbors = await knowledgeGraphApi.getNodeNeighbors(workspaceId, nodeId, depth + 1);
+        setExtraNodes((prev) => {
+          const ids = new Set(prev.map((n) => n.id));
+          return [...prev, ...neighbors.nodes.filter((n) => !ids.has(n.id))];
+        });
+        setExtraEdges((prev) => {
+          const ids = new Set(prev.map((e) => e.id));
+          return [...prev, ...neighbors.edges.filter((e) => !ids.has(e.id))];
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        console.error('Failed to expand node:', err);
+        toast.error(`Failed to expand node: ${message}`);
+      }
+    },
+    [data, depth, extraNodes, workspaceId]
+  );
 
   function handleNodeClick(node: GraphNodeDTO) {
     setSelectedNode(node);
