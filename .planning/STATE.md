@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 14-03-PLAN.md - MCP server API router and agent hot-load wiring
-last_updated: "2026-03-10T02:53:55.619Z"
+stopped_at: Completed 14-04-PLAN.md - MCP server frontend UI (pending human verify checkpoint)
+last_updated: "2026-03-10T03:05:28.380Z"
 last_activity: "2026-03-09 — 13-03 complete: generalized ProviderStatusCard, CustomProviderForm, AISettingsStore.loadModels (AIPR-01, AIPR-02, AIPR-05)"
 progress:
   total_phases: 7
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
   percent: 23
 ---
 
@@ -74,6 +74,7 @@ Progress: [██░░░░░░░░] 23%
 | Phase 14-remote-mcp-server-management P01 | 18 | 2 tasks | 6 files |
 | Phase 14-remote-mcp-server-management P02 | 18 | 2 tasks | 4 files |
 | Phase 14-remote-mcp-server-management P03 | 12 | 2 tasks | 6 files |
+| Phase 14-remote-mcp-server-management P04 | 35 | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -134,6 +135,8 @@ Recent decisions affecting current work:
 - [Phase 14-remote-mcp-server-management]: encrypt_api_key() takes one argument (no master_secret) - uses global EncryptionService singleton; plan interface doc was incorrect
 - [Phase 14-remote-mcp-server-management]: MCP server Pydantic schemas inline in router file - avoids separate schema file, stays under 700-line limit
 - [Phase 14-remote-mcp-server-management]: _load_remote_mcp_servers uses pyright ignore[reportUnusedFunction] + caller type: ignore[reportPrivateUsage] - underscore prefix is intentional shared-internal convention
+- [Phase 14-remote-mcp-server-management]: MCPServersStore added to AIStore.mcpServers — consistent with settings, cost, approval store singleton pattern
+- [Phase 14-remote-mcp-server-management]: MCPServerForm uses collapsible expand/collapse pattern — avoids permanently visible large form, matches CustomProviderForm UX intent
 
 ### Pending Todos
 
@@ -147,7 +150,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-10T02:53:55.617Z
-Stopped at: Completed 14-03-PLAN.md - MCP server API router and agent hot-load wiring
+Last session: 2026-03-10T03:05:28.378Z
+Stopped at: Completed 14-04-PLAN.md - MCP server frontend UI (pending human verify checkpoint)
 Resume file: None
 Next action: Phase 13 in progress. Plans 13-01, 13-02, 13-03 complete. Continue with 13-04 (model picker chat UI).
