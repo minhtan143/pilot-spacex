@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: ""
-last_updated: "2026-03-10T10:30:00.000Z"
-last_activity: "2026-03-10 — 016-04 complete: admin UI verified (all 4 plans done)"
+status: executing
+stopped_at: Completed 019-01-PLAN.md
+last_updated: "2026-03-10T14:58:07.000Z"
+last_activity: "2026-03-10 — 019-01 complete: Wave 0 xfail/todo test stubs for skill registry"
 progress:
-  total_phases: 7
-  completed_phases: 6
-  total_plans: 18
-  completed_plans: 18
-  percent: 86
+  total_phases: 8
+  completed_phases: 5
+  total_plans: 22
+  completed_plans: 19
+  percent: 28
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 
 ## Current Position
 
-Phase: Phase 16 — Workspace Role Skills (complete)
-Plan: 4/4
-Status: All 4 plans complete — human verification passed 2026-03-10
-Last activity: 2026-03-10 — 016-04 complete: admin UI verified, proxy bug fixed
+Phase: Phase 19 — Skill Registry and Plugin System
+Plan: 1/4
+Status: Plan 01 (Wave 0 test stubs) complete
+Last activity: 2026-03-10 — 019-01 complete: Wave 0 xfail/todo test stubs for skill registry
 
-Progress: [███░░░░░░░] 28%
+Progress: [██████████] 96%
 
 ## Milestone: v1.0-alpha
 
@@ -79,8 +79,13 @@ Progress: [███░░░░░░░] 28%
 | Phase 015 P01 | 6 | 3 tasks | 5 files |
 | Phase 015-related-issues P03 | 30 | 2 tasks | 11 files |
 | Phase 016-workspace-role-skills P03 | 19 | 3 tasks | 13 files |
+| Phase 019-skill-registry-and-plugin-system P01 | 2 | 2 tasks | 7 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 19 added: Skill Registry and Plugin System — versioned built-in skill templates (static + workspace-curated), SKILL.md + references/ structure, "Update available" notifications, Pilot Space-native plugin format (skill + MCP + action buttons as installable unit)
 
 ### Decisions
 
@@ -159,6 +164,9 @@ Recent decisions affecting current work:
 - [Phase 016-workspace-role-skills]: workspace skill services take session: AsyncSession in __init__ only (no repo injection in constructor) — consistent with GenerateRoleSkillService pattern in this codebase
 - [Phase 016-workspace-role-skills]: OperationalError guard in materializer for workspace_role_skills query — handles pre-migration 073 and SQLite test DB gracefully
 - [Phase 016-workspace-role-skills]: length() instead of char_length() in WorkspaceRoleSkill CheckConstraints — char_length is PostgreSQL-specific; length() is ANSI SQL compatible
+- [Phase 019-skill-registry-and-plugin-system 01]: No module-level imports from not-yet-existing modules in xfail stubs -- prevents collection failure
+- [Phase 019-skill-registry-and-plugin-system 01]: pytest.fail() inside xfail bodies (not assert False) -- satisfies PT015 and B011 ruff rules
+- [Phase 019-skill-registry-and-plugin-system 01]: Created backend/tests/unit/agents/ package for materializer tests -- new test subdirectory
 
 ### Pending Todos
 
@@ -172,7 +180,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-10T08:51:50.026Z
-Stopped at: 016-04-PLAN.md checkpoint: tasks 1+2 complete, awaiting human-verify
-Resume file: None
-Next action: Phase 15 complete. Continue with Phase 16 (Workspace Role Skills).
+Last session: 2026-03-10T14:58:07.000Z
+Stopped at: Completed 019-01-PLAN.md
+Resume file: .planning/phases/19-skill-registry-and-plugin-system/019-02-PLAN.md
+Next action: Continue with Phase 19 Plan 02 (implementation).
