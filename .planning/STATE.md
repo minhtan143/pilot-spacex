@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 019-02-PLAN.md
+stopped_at: Completed 019-03-PLAN.md
 last_updated: "2026-03-10T15:07:06.311Z"
 last_activity: "2026-03-10 — 019-02 complete: WorkspacePlugin + WorkspaceGithubCredential models, migration 074, repositories"
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 22
-  completed_plans: 20
+  completed_plans: 21
   percent: 97
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: Phase 19 — Skill Registry and Plugin System
-Plan: 2/4
-Status: Plan 02 (persistence layer) complete
-Last activity: 2026-03-10 — 019-02 complete: WorkspacePlugin + WorkspaceGithubCredential models, migration 074, repositories
+Plan: 3/4
+Status: Plan 03 (backend services + REST API) complete
+Last activity: 2026-03-10 — 019-03 complete: GitHubPluginService, InstallPluginService, SeedPluginsService, 7-endpoint REST router, plugin materializer
 
 Progress: [██████████] 97%
 
@@ -81,6 +81,7 @@ Progress: [██████████] 97%
 | Phase 016-workspace-role-skills P03 | 19 | 3 tasks | 13 files |
 | Phase 019-skill-registry-and-plugin-system P01 | 2 | 2 tasks | 7 files |
 | Phase 019 P02 | 5 | 2 tasks | 6 files |
+| Phase 019 P03 | 15 | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -171,6 +172,11 @@ Recent decisions affecting current work:
 - [Phase 019]: WorkspacePlugin is_active defaults to True (not False like WorkspaceRoleSkill) -- plugins are active on install
 - [Phase 019]: WorkspaceGithubCredentialRepository uses upsert pattern -- one PAT per workspace
 - [Phase 019]: Partial unique index on (workspace_id, repo_owner, repo_name, skill_name) WHERE is_deleted = false -- allows re-install after soft-delete
+- [Phase 019]: GitHubPluginService tries reference/ then references/ subdirectory -- anthropics/skills uses singular, CONTEXT.md says plural; handle both
+- [Phase 019]: materialize_plugin_skills called inside materialize_role_skills -- pilotspace_agent.py stays at 698 lines untouched
+- [Phase 019]: Router uses direct instantiation (not DI container) -- consistent with SCIM/related-issues pattern, avoids wiring_config updates
+- [Phase 019]: Workspace plugin seeding via asyncio.create_task fire-and-forget -- non-blocking, non-fatal, log-only on failure
+- [Phase 019]: Plugin install sets is_active=True immediately -- SKILL.md auto-wired per CONTEXT.md; MCP/action buttons stored but NOT wired (Phase 17)
 
 ### Pending Todos
 
@@ -184,7 +190,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-10T15:07:06.309Z
-Stopped at: Completed 019-02-PLAN.md
+Last session: 2026-03-10T15:26:57Z
+Stopped at: Completed 019-03-PLAN.md
 Resume file: None
-Next action: Continue with Phase 19 Plan 02 (implementation).
+Next action: Continue with Phase 19 Plan 04 (frontend UI).
