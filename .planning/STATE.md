@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in_progress
-stopped_at: Completed 016-02-PLAN.md — WorkspaceRoleSkill model + repository + migration 073
-last_updated: "2026-03-10T08:28:00.000Z"
-last_activity: "2026-03-10 — 016-02 complete: WorkspaceRoleSkill model, repository, Alembic migration 073 with RLS"
+status: completed
+stopped_at: Completed 016-03-PLAN.md — workspace role skill services, admin router, materializer extension
+last_updated: "2026-03-10T08:35:04.081Z"
+last_activity: "2026-03-10 — 016-02 complete: persistence layer for WRSKL-01..04"
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 18
-  completed_plans: 16
+  completed_plans: 17
   percent: 28
 ---
 
@@ -78,6 +78,7 @@ Progress: [███░░░░░░░] 28%
 | Phase 14-remote-mcp-server-management P04 | 35 | 2 tasks | 10 files |
 | Phase 015 P01 | 6 | 3 tasks | 5 files |
 | Phase 015-related-issues P03 | 30 | 2 tasks | 11 files |
+| Phase 016-workspace-role-skills P03 | 19 | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -155,6 +156,9 @@ Recent decisions affecting current work:
 - [Phase 016-workspace-role-skills 02]: Partial unique index (WHERE is_deleted = false) instead of UniqueConstraint — allows re-create after soft-delete without uniqueness violation
 - [Phase 016-workspace-role-skills 02]: created_by nullable with SET NULL — workspace skill persists after creator leaves workspace
 - [Phase 016-workspace-role-skills 02]: soft_delete() sets is_active=False atomically — ensures immediate materializer exclusion without separate deactivate call
+- [Phase 016-workspace-role-skills]: workspace skill services take session: AsyncSession in __init__ only (no repo injection in constructor) — consistent with GenerateRoleSkillService pattern in this codebase
+- [Phase 016-workspace-role-skills]: OperationalError guard in materializer for workspace_role_skills query — handles pre-migration 073 and SQLite test DB gracefully
+- [Phase 016-workspace-role-skills]: length() instead of char_length() in WorkspaceRoleSkill CheckConstraints — char_length is PostgreSQL-specific; length() is ANSI SQL compatible
 
 ### Pending Todos
 
@@ -168,7 +172,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-10T07:00:00.000Z
-Stopped at: Completed 015-03-PLAN.md — Phase 15 Related Issues complete
+Last session: 2026-03-10T08:35:04.079Z
+Stopped at: Completed 016-03-PLAN.md — workspace role skill services, admin router, materializer extension
 Resume file: None
 Next action: Phase 15 complete. Continue with Phase 16 (Workspace Role Skills).
