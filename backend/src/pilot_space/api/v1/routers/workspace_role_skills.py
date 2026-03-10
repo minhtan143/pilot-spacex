@@ -77,7 +77,7 @@ async def _require_admin(
 
 
 @router.post(
-    "/",
+    "",
     response_model=WorkspaceRoleSkillResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Generate and create a workspace role skill",
@@ -141,7 +141,7 @@ async def create_workspace_skill(
 
 
 @router.get(
-    "/",
+    "",
     response_model=WorkspaceRoleSkillListResponse,
     status_code=status.HTTP_200_OK,
     summary="List workspace role skills",
