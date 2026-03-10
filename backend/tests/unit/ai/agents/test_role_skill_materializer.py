@@ -261,3 +261,21 @@ class TestMaterializeRoleSkills:
 
         tester_content = (skills_dir / "role-tester" / "SKILL.md").read_text()
         assert "priority" not in tester_content
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(
+    strict=False, reason="WRSKL-03: workspace skill injected when no personal skill exists"
+)
+async def test_workspace_skill_inherited(tmp_path: Path) -> None:
+    """WRSKL-03: active workspace skill appears when user has no personal skill for same role."""
+    pytest.fail("not implemented")
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(
+    strict=False, reason="WRSKL-04: personal skill takes precedence over workspace skill"
+)
+async def test_personal_skill_overrides_workspace(tmp_path: Path) -> None:
+    """WRSKL-04: when both personal and workspace skill exist for same role_type, personal wins."""
+    pytest.fail("not implemented")
