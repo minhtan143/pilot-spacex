@@ -104,6 +104,12 @@ from pilot_space.application.services.workspace_member import (
     MemberProfileService,
     WorkspaceMemberService,
 )
+from pilot_space.application.services.workspace_role_skill import (
+    ActivateWorkspaceSkillService,
+    CreateWorkspaceSkillService,
+    DeleteWorkspaceSkillService,
+    ListWorkspaceSkillsService,
+)
 from pilot_space.config import Settings
 from pilot_space.container._base import InfraContainer
 from pilot_space.container._factories import (
@@ -152,6 +158,7 @@ class Container(InfraContainer):
             "pilot_space.api.v1.dependencies_pilot",
             "pilot_space.api.v1.repository_deps",
             "pilot_space.api.v1.intent_deps",
+            "pilot_space.api.v1.dependencies_workspace_skills",
         ],
     )
 
@@ -495,6 +502,27 @@ class Container(InfraContainer):
 
     generate_role_skill_service = providers.Factory(
         GenerateRoleSkillService,
+        session=providers.Callable(get_current_session),
+    )
+
+    # Workspace Role Skill Services (WRSKL-01..02)
+    create_workspace_skill_service = providers.Factory(
+        CreateWorkspaceSkillService,
+        session=providers.Callable(get_current_session),
+    )
+
+    activate_workspace_skill_service = providers.Factory(
+        ActivateWorkspaceSkillService,
+        session=providers.Callable(get_current_session),
+    )
+
+    list_workspace_skills_service = providers.Factory(
+        ListWorkspaceSkillsService,
+        session=providers.Callable(get_current_session),
+    )
+
+    delete_workspace_skill_service = providers.Factory(
+        DeleteWorkspaceSkillService,
         session=providers.Callable(get_current_session),
     )
 
