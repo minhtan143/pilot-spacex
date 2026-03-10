@@ -85,11 +85,11 @@ class WorkspaceRoleSkill(WorkspaceScopedModel):
             "is_active",
         ),
         CheckConstraint(
-            "char_length(skill_content) <= 15000",
+            "length(skill_content) <= 15000",
             name="ck_workspace_role_skills_content_length",
         ),
         CheckConstraint(
-            "char_length(role_name) <= 100",
+            "length(role_name) <= 100",
             name="ck_workspace_role_skills_role_name_length",
         ),
     )

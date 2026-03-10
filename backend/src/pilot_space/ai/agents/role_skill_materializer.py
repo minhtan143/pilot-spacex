@@ -56,11 +56,6 @@ async def materialize_role_skills(
     repo = RoleSkillRepository(db_session)
     skills = await repo.get_by_user_workspace(user_id, workspace_id)
 
-    # FR-008: If no skills exist, skip materialization (agent uses generic behavior)
-    if not skills:
-        await asyncio.to_thread(_cleanup_stale_role_skills, skills_dir, set())
-        return 0
-
     # Build set of expected role-skill directory names
     expected_dirs: set[str] = set()
 
@@ -74,16 +69,60 @@ async def materialize_role_skills(
 
         await asyncio.to_thread(_write_skill_file, skill_dir, content)
 
+    # WRSKL-03: Load active workspace skills as fallback (only for roles not covered by personal skills)
+    # user_role_types is empty set when skills=[] — workspace skills are always considered for new members
+    from sqlalchemy.exc import OperationalError
+
+    from pilot_space.infrastructure.database.repositories.workspace_role_skill_repository import (
+        WorkspaceRoleSkillRepository,
+    )
+
+    user_role_types = {s.role_type for s in skills}
+    ws_repo = WorkspaceRoleSkillRepository(db_session)
+    try:
+        workspace_skills = await ws_repo.get_active_by_workspace(workspace_id)
+    except OperationalError:
+        # Table may not exist yet (pre-migration 073 environment or SQLite test DB).
+        # Treat as empty — personal skills still materialized correctly.
+        logger.debug(
+            "workspace_role_skills table not accessible for workspace %s, skipping workspace skill injection",
+            workspace_id,
+        )
+        workspace_skills = []
+    for ws_skill in workspace_skills:
+        if ws_skill.role_type in user_role_types:
+            continue  # WRSKL-04: personal skill takes precedence
+        dir_name = f"{_ROLE_SKILL_PREFIX}{ws_skill.role_type}"
+        expected_dirs.add(dir_name)
+        skill_dir = skills_dir / dir_name
+        frontmatter = _build_workspace_frontmatter(ws_skill.role_name, ws_skill.role_type)
+        content = f"{frontmatter}\n{ws_skill.skill_content}"
+        await asyncio.to_thread(_write_skill_file, skill_dir, content)
+
     # FR-014: Clean up stale skill files from deleted/changed roles
     await asyncio.to_thread(_cleanup_stale_role_skills, skills_dir, expected_dirs)
 
+    total_materialized = len(skills) + sum(
+        1 for ws_skill in workspace_skills if ws_skill.role_type not in user_role_types
+    )
+
+    if total_materialized == 0:
+        logger.debug(
+            "No role skills to materialize for user %s in workspace %s",
+            user_id,
+            workspace_id,
+        )
+        return 0
+
     logger.info(
-        "Materialized %d role skills for user %s in workspace %s",
+        "Materialized %d role skills (%d personal, %d workspace-inherited) for user %s in workspace %s",
+        total_materialized,
         len(skills),
+        total_materialized - len(skills),
         user_id,
         workspace_id,
     )
-    return len(skills)
+    return total_materialized
 
 
 def _write_skill_file(skill_dir: Path, content: str) -> None:
@@ -115,6 +154,26 @@ def _build_frontmatter(role_name: str, role_type: str, is_primary: bool) -> str:
     return "\n".join(lines)
 
 
+def _build_workspace_frontmatter(role_name: str, role_type: str) -> str:
+    """Build YAML frontmatter for workspace-inherited skill files.
+
+    Args:
+        role_name: Display name (e.g., "Senior Developer").
+        role_type: Role type key (e.g., "developer").
+
+    Returns:
+        YAML frontmatter string including delimiters and origin: workspace marker.
+    """
+    lines = [
+        "---",
+        f"name: role-{role_type}",
+        f'description: "{role_name}" workspace role skill (inherited)',
+        "origin: workspace",
+        "---",
+    ]
+    return "\n".join(lines)
+
+
 def _cleanup_stale_role_skills(skills_dir: Path, expected_dirs: set[str]) -> None:
     """Remove role-skill directories that are no longer active.
 
@@ -137,4 +196,4 @@ def _cleanup_stale_role_skills(skills_dir: Path, expected_dirs: set[str]) -> Non
                 logger.debug("Cleaned up stale role skill: %s", entry.name)
 
 
-__all__ = ["materialize_role_skills"]
+__all__ = ["_build_workspace_frontmatter", "materialize_role_skills"]

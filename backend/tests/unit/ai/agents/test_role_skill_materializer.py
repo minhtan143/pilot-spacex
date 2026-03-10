@@ -279,3 +279,12 @@ async def test_workspace_skill_inherited(tmp_path: Path) -> None:
 async def test_personal_skill_overrides_workspace(tmp_path: Path) -> None:
     """WRSKL-04: when both personal and workspace skill exist for same role_type, personal wins."""
     pytest.fail("not implemented")
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(
+    strict=False, reason="WRSKL-03: workspace skill inherited when no personal skills at all"
+)
+async def test_workspace_skill_inherited_when_no_personal_skills(tmp_path: Path) -> None:
+    """WRSKL-03: new member (user_skills=[]) gets workspace skill injected — no early-return."""
+    pytest.fail("not implemented")
