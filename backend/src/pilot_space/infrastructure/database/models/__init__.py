@@ -123,6 +123,9 @@ from pilot_space.infrastructure.database.models.workspace_digest import Workspac
 from pilot_space.infrastructure.database.models.workspace_encryption_key import (
     WorkspaceEncryptionKey,
 )
+from pilot_space.infrastructure.database.models.workspace_github_credential import (
+    WorkspaceGithubCredential,
+)
 from pilot_space.infrastructure.database.models.workspace_invitation import (
     InvitationStatus,
     WorkspaceInvitation,
@@ -131,6 +134,7 @@ from pilot_space.infrastructure.database.models.workspace_member import (
     WorkspaceMember,
     WorkspaceRole,
 )
+from pilot_space.infrastructure.database.models.workspace_plugin import WorkspacePlugin
 from pilot_space.infrastructure.database.models.workspace_role_skill import WorkspaceRoleSkill
 from pilot_space.infrastructure.database.models.workspace_session import WorkspaceSession
 
@@ -220,9 +224,11 @@ __all__ = [
     "WorkspaceAPIKey",
     "WorkspaceDigest",
     "WorkspaceEncryptionKey",
+    "WorkspaceGithubCredential",
     "WorkspaceInvitation",
     "WorkspaceMember",
     "WorkspaceOnboarding",
+    "WorkspacePlugin",
     "WorkspaceRole",
     "WorkspaceRoleSkill",
     "WorkspaceScopedMixin",
