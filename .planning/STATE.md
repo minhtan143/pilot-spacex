@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: verifying
-stopped_at: Completed 015-03-PLAN.md — Phase 15 Related Issues complete
-last_updated: "2026-03-10T07:20:06.316Z"
-last_activity: "2026-03-10 — 15-03 complete: related issues frontend UI (RELISS-01..04)"
+stopped_at: Completed 016-01-PLAN.md — Phase 16 Plan 01 Wave 0 stubs
+last_updated: "2026-03-10T08:08:00.000Z"
+last_activity: "2026-03-10 — 016-01 complete: 15 xfail/todo stubs for workspace role skills (WRSKL-01..04)"
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
-  percent: 23
+  total_plans: 18
+  completed_plans: 15
+  percent: 25
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 
 ## Current Position
 
-Phase: Phase 15 — Related Issues (complete)
-Plan: 3/3
-Status: 15-03 complete — RelatedIssuesPanel, 4 TanStack hooks, typed API methods, 5 tests, human verify approved
-Last activity: 2026-03-10 — 15-03 complete: related issues frontend UI (RELISS-01..04)
+Phase: Phase 16 — Workspace Role Skills (in progress)
+Plan: 1/4
+Status: 016-01 complete — 15 xfail/todo stubs for WRSKL-01..04, pytest 9 passed 15 xfailed, vitest 9 todo
+Last activity: 2026-03-10 — 016-01 complete: Wave 0 TDD stubs for workspace role skills
 
-Progress: [██░░░░░░░░] 23%
+Progress: [███░░░░░░░] 25%
 
 ## Milestone: v1.0-alpha
 
@@ -150,6 +150,8 @@ Recent decisions affecting current work:
 - [Phase Phase 15-related-issues]: UNIQUE constraint (user_id, source_issue_id, target_issue_id) as idempotency guard for dismissal upserts — callers catch IntegrityError and treat as no-op
 - [Phase 015-related-issues]: RelatedIssuesPanel uses observer() — no TipTap NodeViewRenderer, so MobX reactivity is correct
 - [Phase 015-related-issues]: Test mocks use 'as unknown as ReturnType<typeof hook>' — TanStack UseQueryResult complex union needs unknown cast for partial mocks
+- [Phase 016-workspace-role-skills 01]: No imports from not-yet-existing modules in stubs — prevents entire test file collection failure when implementation is absent
+- [Phase 016-workspace-role-skills 01]: pytestmark = pytest.mark.asyncio at module level — matches existing test_role_skill_repository.py pattern in this codebase
 
 ### Pending Todos
 
