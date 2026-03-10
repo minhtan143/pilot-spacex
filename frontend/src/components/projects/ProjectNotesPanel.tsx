@@ -1,14 +1,9 @@
 'use client';
 
-import { useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Pin, Clock, FileText, Plus, ChevronRight, Loader2 } from 'lucide-react';
+import { Pin, Clock, FileText, ChevronRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
 import { useNotes } from '@/features/notes/hooks/useNotes';
-import { useCreateNote } from '@/features/notes/hooks/useCreateNote';
-import { useWorkspaceStore } from '@/stores/RootStore';
 import type { Project } from '@/types';
 
 interface ProjectNotesPanelProps {
@@ -18,10 +13,6 @@ interface ProjectNotesPanelProps {
 }
 
 export function ProjectNotesPanel({ project, workspaceSlug, workspaceId }: ProjectNotesPanelProps) {
-  const router = useRouter();
-  const workspaceStore = useWorkspaceStore();
-  const canCreateContent = workspaceStore.currentUserRole !== 'guest';
-
   const {
     data: pinnedData,
     isLoading: pinnedLoading,
@@ -45,17 +36,6 @@ export function ProjectNotesPanel({ project, workspaceSlug, workspaceId }: Proje
     pageSize: 5,
     enabled: !!workspaceId,
   });
-
-  const createNote = useCreateNote({
-    workspaceId,
-    onSuccess: (note) => {
-      router.push(`/${workspaceSlug}/notes/${note.id}`);
-    },
-  });
-
-  const handleCreateNote = useCallback(() => {
-    createNote.mutate({ title: 'Untitled', projectId: project.id });
-  }, [createNote, project.id]);
 
   const isLoading = pinnedLoading || recentLoading;
   const isError = pinnedError || recentError;
@@ -161,25 +141,6 @@ export function ProjectNotesPanel({ project, workspaceSlug, workspaceId }: Proje
             </Link>
           )}
         </div>
-      )}
-
-      {/* New Note button — hidden for guests */}
-      {canCreateContent && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mt-1 w-full justify-start gap-1.5 px-2 text-xs text-muted-foreground hover:text-sidebar-foreground"
-          onClick={handleCreateNote}
-          disabled={createNote.isPending}
-          data-testid="project-new-note-button"
-        >
-          {createNote.isPending ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <Plus className="h-3 w-3" />
-          )}
-          New Note
-        </Button>
       )}
     </div>
   );

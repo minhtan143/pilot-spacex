@@ -284,6 +284,14 @@ const NoteDetailPage = observer(function NoteDetailPage() {
     }
   }, [togglePin, note]);
 
+  // Handle move to project
+  const handleMove = useCallback(
+    (newProjectId: string | null) => {
+      updateNote.mutate({ projectId: newProjectId ?? undefined });
+    },
+    [updateNote]
+  );
+
   // Handle share
   const handleShare = useCallback(() => {
     // Open share dialog - to be implemented
@@ -346,6 +354,7 @@ const NoteDetailPage = observer(function NoteDetailPage() {
           onDelete={handleDelete}
           onTogglePin={handleTogglePin}
           onVersionHistory={handleVersionHistory}
+          onMove={handleMove}
           projectId={note.projectId}
           linkedIssues={note.linkedIssues}
         />

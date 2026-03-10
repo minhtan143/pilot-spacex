@@ -2,8 +2,22 @@
 
 **Feature Branch**: `022-project-notes-panel`
 **Created**: 2026-03-10
-**Status**: Draft
+**Updated**: 2026-03-10 — v2: 6 enhancement features added
+**Status**: In Progress
 **Input**: User description: "A new panel has been added to the project's taskbar to display Recent Notes/Pinned Notes, which looks similar to the workspace's UI panel."
+
+---
+
+## Enhancement Features (v2 additions)
+
+These 6 enhancements build on the base implementation:
+
+1. **Workspace sidebar pinned notes** — display a project label after the note name.
+2. **Project notes panel** — remove the "New Note" button; show only the Recent notes section.
+3. **New Note button (workspace sidebar)** — wire TemplatePicker modal before note creation (reusing T-018 from feature 018).
+4. **New Note with project selector** — after template selection, user can choose which project (or root workspace) to store the note in.
+5. **Note view breadcrumb** — display `Notes > [Project name] > [Note name]` when the note belongs to a project.
+6. **Note options: Move** — add a "Move..." option in the note's `...` dropdown to reassign the note to a different project or root workspace.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -75,10 +89,19 @@ The project notes panel (both the Pinned and Recent sub-sections) uses the same 
 - **FR-009**: The Notes section MUST be rendered only in the desktop sidebar (medium breakpoint and above); it MUST NOT appear in the mobile tab bar.
 - **FR-010**: Note data for the panel MUST be fetched scoped to the current project, requesting no more than 10 notes per call.
 
+### Functional Requirements (v2 — Enhancement Features)
+
+- **FR-011**: The workspace sidebar PINNED notes section MUST display a muted project name label after each note title when the note's `projectId` is set.
+- **FR-012**: The project sidebar notes panel MUST NOT include a "New Note" button; it MUST display only the Pinned and Recent lists.
+- **FR-013**: The workspace sidebar "New Note" button MUST open a TemplatePicker modal before creating a note (4 SDLC templates + blank option), reusing the `TemplatePicker` component built in feature 018.
+- **FR-014**: After template selection, the system MUST present a project selector step allowing the user to assign the new note to a project or the root workspace.
+- **FR-015**: The note view header MUST display a breadcrumb path of `Notes > [Project name] > [Note name]` when the note has a `projectId`; the project name segment MUST link to the project overview page.
+- **FR-016**: The note view options menu MUST include a "Move..." action that opens a project picker allowing the user to reassign the note to a different project or root workspace (no project).
+
 ### Key Entities
 
 - **Note**: A workspace note. Relevant attributes: `id`, `title`, `isPinned`, `projectId`, `updatedAt`. Notes are linked to a project via `projectId`.
-- **Project**: The project context. Relevant attributes: `id`, `workspaceId`. Used as the filter scope for the notes panel.
+- **Project**: The project context. Relevant attributes: `id`, `name`, `workspaceId`. Used as the filter scope for the notes panel and as label/picker options.
 
 ## Success Criteria *(mandatory)*
 
@@ -86,8 +109,10 @@ The project notes panel (both the Pinned and Recent sub-sections) uses the same 
 
 - **SC-001**: A user can reach a project-linked note from the project sidebar in 2 clicks or fewer (open project → click note title).
 - **SC-002**: The Notes panel data appears within the same page load as the rest of the project sidebar with no additional perceptible delay.
-- **SC-003**: 100% of notes created via the "New Note" shortcut in the project panel are correctly linked to the current project.
+- **SC-003**: 100% of notes created via workspace sidebar "New Note" that have a project selected are correctly linked to that project.
 - **SC-004**: The Notes panel is visually consistent with the workspace sidebar notes sections when reviewed side-by-side.
+- **SC-005**: The note view breadcrumb correctly resolves and displays the project name segment for all notes with a `projectId`.
+- **SC-006**: After using "Move...", the note's `projectId` is updated and the breadcrumb reflects the change without a full page reload.
 
 ## Assumptions
 
@@ -95,3 +120,5 @@ The project notes panel (both the Pinned and Recent sub-sections) uses the same 
 - The existing notes list API supports filtering by `projectId` (`project_id` query param on `GET /workspaces/{id}/notes`).
 - The project panel will use a direct data query with `projectId` filter rather than the workspace-scoped MobX `NoteStore`, since `NoteStore` is not project-aware.
 - The `canCreateContent` permission check (role is not guest) applies identically to the project sidebar as it does to the workspace sidebar.
+- `PATCH /workspaces/{id}/notes/{noteId}` already accepts `projectId` in the request body (mapped from `UpdateNoteData.projectId?: string`).
+- The `TemplatePicker` component and `NoteTemplate` type from feature 018 are fully built and available at `features/notes/components/TemplatePicker.tsx`.

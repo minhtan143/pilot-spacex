@@ -4,7 +4,7 @@ import { observer } from 'mobx-react-lite';
 import { motion } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   Home,
   FileText,
@@ -39,7 +39,11 @@ import {
   useAuthStore,
   useWorkspaceStore,
 } from '@/stores';
-import { useCreateNote, createNoteDefaults } from '@/features/notes/hooks';
+import { useCreateNote } from '@/features/notes/hooks';
+import { useProjects } from '@/features/projects/hooks/useProjects';
+import { TemplatePicker } from '@/features/notes/components/TemplatePicker';
+import { MoveNoteDialog } from '@/components/editor/MoveNoteDialog';
+import { useNewNoteFlow } from './useNewNoteFlow';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -369,10 +373,20 @@ export const Sidebar = observer(function Sidebar() {
     }));
   }, [workspaceSlug]);
 
+  const { data: projectsData } = useProjects({ workspaceId, enabled: !!workspaceId });
+  const projectMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    (projectsData?.items ?? []).forEach((p) => {
+      map[p.id] = p.name;
+    });
+    return map;
+  }, [projectsData]);
+
   const pinnedNotes = useMemo(() => {
     return noteStore.pinnedNotes.slice(0, 5).map((note) => ({
       id: note.id,
       title: note.title,
+      projectId: note.projectId,
       href: `/${workspaceSlug}/notes/${note.id}`,
     }));
   }, [noteStore.pinnedNotes, workspaceSlug]);
@@ -388,12 +402,14 @@ export const Sidebar = observer(function Sidebar() {
       }));
   }, [noteStore.recentNotes, noteStore.pinnedNotes, workspaceSlug]);
 
-  const handleNewNote = useCallback(() => {
-    createNote.mutate(createNoteDefaults());
-  }, [createNote]);
+  const newNoteFlow = useNewNoteFlow({
+    onCreateNote: (data) => createNote.mutate(data),
+  });
+  const handleNewNote = newNoteFlow.open;
 
   return (
-    <div className="flex h-full flex-col">
+    <>
+      <div className="flex h-full flex-col">
       {/* Logo & Workspace */}
       <div
         className={cn(
@@ -550,6 +566,11 @@ export const Sidebar = observer(function Sidebar() {
                     >
                       <FileText className="h-3 w-3 text-muted-foreground" />
                       <span className="truncate">{note.title}</span>
+                      {note.projectId && projectMap[note.projectId] && (
+                        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60 truncate max-w-[60px]">
+                          {projectMap[note.projectId]}
+                        </span>
+                      )}
                     </Link>
                   </motion.div>
                 ))}
@@ -667,5 +688,22 @@ export const Sidebar = observer(function Sidebar() {
         </Tooltip>
       </div>
     </div>
+
+    {newNoteFlow.showTemplatePicker && (
+      <TemplatePicker
+        workspaceId={workspaceId}
+        isAdmin={isAdminOrOwner}
+        onConfirm={newNoteFlow.handleTemplateConfirm}
+        onClose={newNoteFlow.handleTemplateClose}
+      />
+    )}
+    {newNoteFlow.showProjectPicker && (
+      <MoveNoteDialog
+        workspaceId={workspaceId}
+        onSelect={newNoteFlow.handleProjectSelect}
+        onClose={newNoteFlow.handleProjectClose}
+      />
+    )}
+    </>
   );
 });
