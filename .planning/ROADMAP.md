@@ -35,7 +35,7 @@ Full archive: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 16: Workspace Role Skills** — Admin-configured AI skill generation and role inheritance (completed 2026-03-10)
 - [x] **Phase 17: Skill Action Buttons** — Custom issue-page buttons bound to skills or MCP tools (completed 2026-03-11)
 - [ ] **Phase 18: Tech Debt Closure** — OIDC E2E, MCP approval wiring, xfail tests, key rotation
-- [ ] **Phase 20: Skill Template Catalog** — Decouple skills from roles, unified template catalog, user skill personalization
+- [x] **Phase 20: Skill Template Catalog** — Decouple skills from roles, unified template catalog, user skill personalization (completed 2026-03-11)
 
 ## Phase Details
 
@@ -187,7 +187,7 @@ Plans:
   4. Admin can create/manage workspace templates; built-in templates are read-only
   5. Users browse template catalog, pick a template, and AI generates personalized skill
   6. Skills settings page shows My Skills + Template Catalog sections
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 - [ ] 20-01-PLAN.md — Models + migration 077 + repositories (P20-01, P20-02, P20-03)

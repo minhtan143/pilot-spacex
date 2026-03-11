@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in_progress
-stopped_at: Completed 20-03-PLAN.md
-last_updated: "2026-03-11T13:55:45Z"
-last_activity: "2026-03-11 — 020-03 complete: skill templates admin CRUD, user skills owner CRUD, Pydantic schemas, 23 router tests"
+status: completed
+stopped_at: Completed 20-04-PLAN.md
+last_updated: "2026-03-11T14:33:18.521Z"
+last_activity: "2026-03-11 — 020-04 complete: frontend template catalog UI, API hooks, restructured skills settings page"
 progress:
   total_phases: 9
-  completed_phases: 8
-  total_plans: 27
-  completed_plans: 27
-  percent: 100
+  completed_phases: 9
+  total_plans: 31
+  completed_plans: 31
+  percent: 75
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: Phase 20 — Skill Template Catalog
-Plan: 3/4
-Status: Plan 03 complete — API endpoints for skill templates and user skills
-Last activity: 2026-03-11 — 020-03 complete: skill templates admin CRUD, user skills owner CRUD, 23 router tests
+Plan: 4/4
+Status: Phase 20 complete — all plans executed
+Last activity: 2026-03-11 — 020-04 complete: frontend template catalog UI, API hooks, restructured skills settings page
 
-Progress: [███████░░░] 75%
+Progress: [██████████] 100%
 
 ## Milestone: v1.0-alpha
 
@@ -90,6 +90,7 @@ Progress: [███████░░░] 75%
 | Phase 20-skill-template-catalog P01 | 6min | 2 tasks | 8 files |
 | Phase 20-skill-template-catalog P02 | 13min | 2 tasks | 9 files |
 | Phase 20-skill-template-catalog P03 | 16min | 2 tasks | 8 files |
+| Phase 20-skill-template-catalog P04 | 10min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -210,6 +211,12 @@ Recent decisions affecting current work:
 - [Phase 20-skill-template-catalog 02]: CreateUserSkillService reuses GenerateRoleSkillService for AI personalization
 - [Phase 018]: Used FastAPI dependency_overrides for audit test auth instead of middleware patching
 - [Phase 018]: Mocked AuditLogRepository at router level to avoid event loop issues with real DB sessions in tests
+- [Phase 20-skill-template-catalog 04]: TemplateCatalog is observer, TemplateCard and MySkillCard are plain components -- observer for data fetching, plain for props-driven leaf components
+- [Phase 20-skill-template-catalog 04]: Removed MAX_SKILLS=3 cap -- users can have multiple active skills per Phase 20 design
+- [Phase 20-skill-template-catalog 04]: Source badge color coding: blue=built-in, green=workspace, purple=custom
+- [Phase 20-skill-template-catalog 04]: Built-in templates show lock icon + only deactivate in admin dropdown (no edit/delete)
+- [Phase 20-skill-template-catalog 04]: SkillGeneratorModal receives template prop to pre-fill from "Use This" flow
+- [Phase 20-skill-template-catalog 04]: Role-type filter chips in TemplateCatalog for browsing by category
 
 ### Pending Todos
 
@@ -223,7 +230,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T13:55:45Z
-Stopped at: Completed 20-03-PLAN.md
-Resume file: .planning/phases/20-migrate-all-role-skill-template-of-each-role-then-user-setup-skill-can-pick-template-include-role-template-skill-do-not-depend-on-role/20-04-PLAN.md
-Next action: Execute Phase 20 Plan 04.
+Last session: 2026-03-11T14:33:18Z
+Stopped at: Completed 20-04-PLAN.md (Phase 20 complete)
+Resume file: None — Phase 20 fully executed
+Next action: Phase 20 complete. All 4 plans executed.
