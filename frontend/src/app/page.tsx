@@ -106,13 +106,13 @@ export default function HomePage() {
         } = await supabase.auth.getUser();
 
         const email = user?.email ?? '';
-        const displayName =
-          (user?.user_metadata?.name as string | undefined) ||
+        const fullName =
           (user?.user_metadata?.full_name as string | undefined) ||
-          email.split('@')[0] ||
-          'my-workspace';
+          (user?.user_metadata?.name as string | undefined) ||
+          email.split('@')[0];
 
-        const baseSlug = toSlug(displayName) || 'my-workspace';
+        const displayName = fullName ? `${fullName}'s workspace` : 'My workspace';
+        const baseSlug = toSlug(displayName);
 
         const tryCreate = async (suffix: string): Promise<void> => {
           const slug = `${baseSlug}-${suffix}`;

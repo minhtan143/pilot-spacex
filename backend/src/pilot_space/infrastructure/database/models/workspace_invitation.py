@@ -11,19 +11,13 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import (
-    DateTime,
-    Enum as SQLEnum,
-    ForeignKey,
-    Index,
-    String,
-    UniqueConstraint,
-)
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from pilot_space.infrastructure.database.base import BaseModel
 from pilot_space.infrastructure.database.models.workspace_member import WorkspaceRole
+from sqlalchemy import DateTime
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy import ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from pilot_space.infrastructure.database.models.user import User
@@ -33,10 +27,10 @@ if TYPE_CHECKING:
 class InvitationStatus(str, Enum):
     """Status of a workspace invitation."""
 
-    PENDING = "pending"
-    ACCEPTED = "accepted"
-    EXPIRED = "expired"
-    CANCELLED = "cancelled"
+    pending = "pending"
+    accepted = "accepted"
+    expired = "expired"
+    cancelled = "cancelled"
 
 
 def _default_expires_at() -> datetime:
@@ -86,7 +80,7 @@ class WorkspaceInvitation(BaseModel):
     status: Mapped[InvitationStatus] = mapped_column(
         SQLEnum(InvitationStatus, name="invitation_status"),
         nullable=False,
-        default=InvitationStatus.PENDING,
+        default=InvitationStatus.pending,
     )
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -136,13 +130,13 @@ class WorkspaceInvitation(BaseModel):
     @property
     def is_pending(self) -> bool:
         """Check if invitation is still pending."""
-        return self.status == InvitationStatus.PENDING
+        return self.status == InvitationStatus.pending
 
     @property
     def is_expired(self) -> bool:
         """Check if invitation has expired."""
-        if self.status == InvitationStatus.EXPIRED:
+        if self.status == InvitationStatus.expired:
             return True
-        if self.status == InvitationStatus.PENDING:
+        if self.status == InvitationStatus.pending:
             return datetime.now(tz=UTC) > self.expires_at
         return False

@@ -30,10 +30,7 @@ from pilot_space.application.services.workspace import (
     ListWorkspacesPayload,
     UpdateWorkspacePayload,
 )
-from pilot_space.dependencies import (
-    CurrentUser,
-    CurrentUserId,
-)
+from pilot_space.dependencies import SyncedUserId
 from pilot_space.dependencies.auth import SessionDep
 from pilot_space.infrastructure.logging import get_logger
 
@@ -45,9 +42,11 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 WorkspaceIdOrSlug = Annotated[str, Path(description="Workspace ID (UUID) or slug")]
 
 
-@router.get("", response_model=PaginatedResponse[WorkspaceResponse], tags=["workspaces"])
+@router.get(
+    "", response_model=PaginatedResponse[WorkspaceResponse], tags=["workspaces"]
+)
 async def list_workspaces(
-    current_user: CurrentUser,
+    current_user_id: SyncedUserId,
     session: SessionDep,
     service: WorkspaceServiceDep,
     cursor: str | None = Query(default=None, description="Pagination cursor"),
@@ -56,7 +55,7 @@ async def list_workspaces(
     """List workspaces the current user is a member of.
 
     Args:
-        current_user: Authenticated user.
+        current_user_id: Authenticated user ID.
         session: Database session (triggers ContextVar).
         service: Workspace service.
         cursor: Pagination cursor.
@@ -67,7 +66,7 @@ async def list_workspaces(
     """
     result = await service.list_workspaces(
         ListWorkspacesPayload(
-            user_id=current_user.user_id,
+            user_id=current_user_id,
             cursor=cursor,
             page_size=page_size,
         )
@@ -107,7 +106,7 @@ async def list_workspaces(
 )
 async def create_workspace(
     request: WorkspaceCreate,
-    current_user_id: CurrentUserId,
+    current_user_id: SyncedUserId,
     session: SessionDep,
     service: WorkspaceServiceDep,
 ) -> WorkspaceDetailResponse:
@@ -156,10 +155,12 @@ async def create_workspace(
     )
 
 
-@router.get("/{workspace_id}", response_model=WorkspaceDetailResponse, tags=["workspaces"])
+@router.get(
+    "/{workspace_id}", response_model=WorkspaceDetailResponse, tags=["workspaces"]
+)
 async def get_workspace(
     workspace_id: WorkspaceIdOrSlug,
-    current_user: CurrentUser,
+    current_user_id: SyncedUserId,
     session: SessionDep,
     service: WorkspaceServiceDep,
 ) -> WorkspaceDetailResponse:
@@ -167,7 +168,7 @@ async def get_workspace(
 
     Args:
         workspace_id: Workspace identifier (UUID or slug).
-        current_user: Authenticated user.
+        current_user_id: Authenticated user ID.
         session: Database session (triggers ContextVar).
         service: Workspace service.
 
@@ -181,7 +182,7 @@ async def get_workspace(
         result = await service.get_workspace(
             GetWorkspacePayload(
                 workspace_id_or_slug=workspace_id,
-                user_id=current_user.user_id,
+                user_id=current_user_id,
             )
         )
     except ValueError as e:
@@ -212,11 +213,13 @@ async def get_workspace(
     )
 
 
-@router.patch("/{workspace_id}", response_model=WorkspaceDetailResponse, tags=["workspaces"])
+@router.patch(
+    "/{workspace_id}", response_model=WorkspaceDetailResponse, tags=["workspaces"]
+)
 async def update_workspace(
     workspace_id: WorkspaceIdOrSlug,
     request: WorkspaceUpdate,
-    current_user: CurrentUser,
+    current_user_id: SyncedUserId,
     session: SessionDep,
     service: WorkspaceServiceDep,
 ) -> WorkspaceDetailResponse:
@@ -227,7 +230,7 @@ async def update_workspace(
     Args:
         workspace_id: Workspace identifier (UUID or slug).
         request: Update data.
-        current_user: Authenticated user.
+        current_user_id: Authenticated user ID.
         session: Database session (triggers ContextVar).
         service: Workspace service.
 
@@ -243,7 +246,7 @@ async def update_workspace(
         result = await service.update_workspace(
             UpdateWorkspacePayload(
                 workspace_id_or_slug=workspace_id,
-                user_id=current_user.user_id,
+                user_id=current_user_id,
                 name=update_data.get("name"),
                 slug=update_data.get("slug"),
                 description=update_data.get("description"),
@@ -286,7 +289,7 @@ async def update_workspace(
 @router.delete("/{workspace_id}", response_model=DeleteResponse, tags=["workspaces"])
 async def delete_workspace(
     workspace_id: WorkspaceIdOrSlug,
-    current_user: CurrentUser,
+    current_user_id: SyncedUserId,
     session: SessionDep,
     service: WorkspaceServiceDep,
 ) -> DeleteResponse:
@@ -296,7 +299,7 @@ async def delete_workspace(
 
     Args:
         workspace_id: Workspace identifier (UUID or slug).
-        current_user: Authenticated user.
+        current_user_id: Authenticated user ID.
         session: Database session (triggers ContextVar).
         service: Workspace service.
 
@@ -310,7 +313,7 @@ async def delete_workspace(
         result = await service.delete_workspace(
             DeleteWorkspacePayload(
                 workspace_id_or_slug=workspace_id,
-                user_id=current_user.user_id,
+                user_id=current_user_id,
             )
         )
     except ValueError as e:
@@ -343,10 +346,12 @@ async def delete_workspace(
 )
 async def list_workspace_labels(
     workspace_id: WorkspaceIdOrSlug,
-    current_user_id: CurrentUserId,
+    current_user_id: SyncedUserId,
     session: SessionDep,
     service: WorkspaceServiceDep,
-    project_id: Annotated[UUID | None, Query(description="Filter by project ID")] = None,
+    project_id: Annotated[
+        UUID | None, Query(description="Filter by project ID")
+    ] = None,
 ) -> list[LabelBriefSchema]:
     """List labels available in a workspace.
 
