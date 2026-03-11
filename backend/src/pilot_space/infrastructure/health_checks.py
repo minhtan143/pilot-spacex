@@ -31,27 +31,40 @@ async def check_database() -> dict[str, object]:
         return {"status": "error", "error": str(exc)}
 
 
-async def check_redis() -> dict[str, object]:
+async def check_redis(client: object | None = None) -> dict[str, object]:
     """Check Redis connectivity via PING.
+
+    Args:
+        client: An already-connected RedisClient singleton to reuse. When
+            provided the function skips connect/disconnect to avoid cycling
+            the connection pool on every health check call. When None a
+            temporary client is created (fallback / standalone use).
 
     Returns:
         dict with 'status' ('ok' or 'error'), 'latency_ms' on success,
         or 'error' message on failure.
     """
-    from pilot_space.config import get_settings
     from pilot_space.infrastructure.cache import RedisClient
 
     start = time.monotonic()
     try:
-        settings = get_settings()
-        client = RedisClient(redis_url=settings.redis_url)
-        await client.connect()
-        try:
+        if client is not None and isinstance(client, RedisClient):
+            # Reuse the application-level singleton — no connect/disconnect.
             reachable = await client.ping()
             if not reachable:
                 return {"status": "error", "error": "ping returned False"}
-        finally:
-            await client.disconnect()
+        else:
+            from pilot_space.config import get_settings
+
+            settings = get_settings()
+            tmp = RedisClient(redis_url=settings.redis_url)
+            await tmp.connect()
+            try:
+                reachable = await tmp.ping()
+                if not reachable:
+                    return {"status": "error", "error": "ping returned False"}
+            finally:
+                await tmp.disconnect()
         return {"status": "ok", "latency_ms": round((time.monotonic() - start) * 1000, 1)}
     except Exception as exc:
         return {"status": "error", "error": str(exc)}

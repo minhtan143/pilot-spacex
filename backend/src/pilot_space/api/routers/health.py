@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 import structlog
 from fastapi import APIRouter
 
+from pilot_space.container import get_container
 from pilot_space.infrastructure.health_checks import check_database, check_redis, check_supabase
 
 router = APIRouter(tags=["Health"])
@@ -57,9 +58,10 @@ async def readiness() -> dict[str, object]:
 
     Kubernetes uses this to decide whether to route traffic to the pod.
     """
+    redis_client = get_container().redis_client()
     check_coros: dict[str, object] = {
         "database": check_database(),
-        "redis": check_redis(),
+        "redis": check_redis(redis_client),
         "supabase": check_supabase(),
     }
     results: dict[str, dict[str, object]] = {}
