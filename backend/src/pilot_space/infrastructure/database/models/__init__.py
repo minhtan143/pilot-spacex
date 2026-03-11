@@ -91,6 +91,10 @@ from pilot_space.infrastructure.database.models.onboarding import WorkspaceOnboa
 from pilot_space.infrastructure.database.models.pilot_api_key import PilotAPIKey
 from pilot_space.infrastructure.database.models.pm_block_insight import PMBlockInsight
 from pilot_space.infrastructure.database.models.project import Project
+from pilot_space.infrastructure.database.models.skill_action_button import (
+    BindingType,
+    SkillActionButton,
+)
 from pilot_space.infrastructure.database.models.skill_execution import (
     SkillApprovalRole,
     SkillApprovalStatus,
@@ -157,6 +161,7 @@ __all__ = [
     "AuditLog",
     "Base",
     "BaseModel",
+    "BindingType",
     "ChatAttachment",
     "ConstitutionRule",
     "CustomRole",
@@ -202,6 +207,7 @@ __all__ = [
     "PilotAPIKey",
     "Project",
     "RoleTemplate",
+    "SkillActionButton",
     "SkillApprovalRole",
     "SkillApprovalStatus",
     "SkillExecution",
