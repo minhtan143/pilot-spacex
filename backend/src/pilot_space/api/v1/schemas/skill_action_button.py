@@ -26,8 +26,6 @@ class SkillActionButtonCreate(BaseModel):
         binding_metadata: JSONB metadata dict.
     """
 
-    model_config = ConfigDict(strict=True)
-
     name: str = Field(min_length=1, max_length=100)
     icon: str | None = None
     binding_type: BindingType
@@ -47,8 +45,6 @@ class SkillActionButtonUpdate(BaseModel):
         sort_order: Updated display order.
         is_active: Updated active state.
     """
-
-    model_config = ConfigDict(strict=True)
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     icon: str | None = None

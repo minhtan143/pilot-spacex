@@ -117,6 +117,21 @@ class InstallPluginService:
             workspace_id,
             installed_sha[:8],
         )
+
+        # Auto-create action buttons from plugin metadata (non-fatal)
+        try:
+            await self._create_plugin_action_buttons(
+                workspace_id=workspace_id,
+                plugin=created,
+                skill_content=skill_content,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to create action buttons for plugin %s",
+                skill_name,
+                exc_info=True,
+            )
+
         return created
 
     async def update(
@@ -156,14 +171,100 @@ class InstallPluginService:
     async def uninstall(self, plugin: WorkspacePlugin) -> None:
         """Uninstall (soft-delete) a plugin.
 
+        Deactivates associated action buttons before soft-deleting the plugin.
+
         Args:
             plugin: WorkspacePlugin entity to uninstall.
         """
+        # Deactivate associated action buttons (non-fatal)
+        try:
+            from pilot_space.infrastructure.database.repositories.skill_action_button_repository import (
+                SkillActionButtonRepository,
+            )
+
+            btn_repo = SkillActionButtonRepository(self._session)
+            count = await btn_repo.deactivate_by_plugin_id(plugin.workspace_id, str(plugin.id))
+            if count > 0:
+                logger.info(
+                    "Deactivated %d action buttons for plugin %s",
+                    count,
+                    plugin.skill_name,
+                )
+        except Exception:
+            logger.warning(
+                "Failed to deactivate action buttons for plugin %s",
+                plugin.skill_name,
+                exc_info=True,
+            )
+
         await self._plugin_repo.soft_delete(plugin)
         logger.info(
             "Uninstalled plugin %s from workspace %s",
             plugin.skill_name,
             plugin.workspace_id,
+        )
+
+    async def _create_plugin_action_buttons(
+        self,
+        workspace_id: UUID,
+        plugin: WorkspacePlugin,
+        skill_content: SkillContent,
+    ) -> None:
+        """Auto-create action buttons from plugin metadata.
+
+        Checks if skill_content references contain action_buttons definitions.
+        If found, creates SkillActionButton rows linked to this plugin.
+
+        Args:
+            workspace_id: Target workspace UUID.
+            plugin: The just-created WorkspacePlugin entity.
+            skill_content: Fetched SkillContent with references.
+        """
+        from pilot_space.infrastructure.database.models.skill_action_button import (
+            BindingType,
+            SkillActionButton,
+        )
+        from pilot_space.infrastructure.database.repositories.skill_action_button_repository import (
+            SkillActionButtonRepository,
+        )
+
+        # Look for action_buttons in references list
+        action_buttons: list[object] = []
+        for ref in skill_content.references:
+            ref_dict: dict[str, object] = ref if isinstance(ref, dict) else {}  # type: ignore[assignment]
+            if ref_dict.get("type") == "action_buttons":
+                raw = ref_dict.get("buttons", [])
+                action_buttons = raw if isinstance(raw, list) else []
+                break
+
+        if not action_buttons:
+            return
+
+        btn_repo = SkillActionButtonRepository(self._session)
+        for idx, btn_raw in enumerate(action_buttons):
+            btn_def: dict[str, object] = btn_raw if isinstance(btn_raw, dict) else {}  # type: ignore[assignment]
+            if not btn_def.get("name"):
+                continue
+            button = SkillActionButton(
+                workspace_id=workspace_id,
+                name=btn_def["name"],
+                icon=btn_def.get("icon"),
+                binding_type=BindingType.SKILL,
+                binding_id=None,
+                binding_metadata={
+                    "source": "plugin",
+                    "plugin_id": str(plugin.id),
+                    "skill_name": plugin.skill_name,
+                },
+                sort_order=idx * 10,
+                is_active=True,
+            )
+            await btn_repo.create(button)
+
+        logger.info(
+            "Created %d action buttons for plugin %s",
+            len(action_buttons),
+            plugin.skill_name,
         )
 
 
