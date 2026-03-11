@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-stopped_at: Completed 20-02-PLAN.md
-last_updated: "2026-03-11T13:52:53Z"
-last_activity: "2026-03-11 — 020-02 complete: materializer reads new tables, SeedTemplatesService, CreateUserSkillService, 30 tests"
+stopped_at: Completed 20-03-PLAN.md
+last_updated: "2026-03-11T13:55:45Z"
+last_activity: "2026-03-11 — 020-03 complete: skill templates admin CRUD, user skills owner CRUD, Pydantic schemas, 23 router tests"
 progress:
   total_phases: 9
   completed_phases: 8
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: Phase 20 — Skill Template Catalog
-Plan: 2/4
-Status: Plan 02 complete — Materializer refactor + core services
-Last activity: 2026-03-11 — 020-02 complete: materializer reads new tables, SeedTemplatesService, CreateUserSkillService, 30 tests
+Plan: 3/4
+Status: Plan 03 complete — API endpoints for skill templates and user skills
+Last activity: 2026-03-11 — 020-03 complete: skill templates admin CRUD, user skills owner CRUD, 23 router tests
 
-Progress: [█████░░░░░] 50%
+Progress: [███████░░░] 75%
 
 ## Milestone: v1.0-alpha
 
@@ -89,6 +89,7 @@ Progress: [█████░░░░░] 50%
 | Phase 018 P01 | 20min | 2 tasks | 9 files |
 | Phase 20-skill-template-catalog P01 | 6min | 2 tasks | 8 files |
 | Phase 20-skill-template-catalog P02 | 13min | 2 tasks | 9 files |
+| Phase 20-skill-template-catalog P03 | 16min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -222,7 +223,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T13:52:53Z
-Stopped at: Completed 20-02-PLAN.md
-Resume file: .planning/phases/20-migrate-all-role-skill-template-of-each-role-then-user-setup-skill-can-pick-template-include-role-template-skill-do-not-depend-on-role/20-03-PLAN.md
-Next action: Execute Phase 20 Plan 03.
+Last session: 2026-03-11T13:55:45Z
+Stopped at: Completed 20-03-PLAN.md
+Resume file: .planning/phases/20-migrate-all-role-skill-template-of-each-role-then-user-setup-skill-can-pick-template-include-role-template-skill-do-not-depend-on-role/20-04-PLAN.md
+Next action: Execute Phase 20 Plan 04.
