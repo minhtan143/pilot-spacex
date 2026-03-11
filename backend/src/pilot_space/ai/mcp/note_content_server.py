@@ -23,8 +23,9 @@ from typing import TYPE_CHECKING, Any
 
 from claude_agent_sdk import McpSdkServerConfig, create_sdk_mcp_server, tool
 
+from pilot_space.ai.infrastructure.approval import ActionType as AT
 from pilot_space.ai.mcp.event_publisher import EventPublisher
-from pilot_space.ai.tools.mcp_server import ToolContext, get_tool_approval_level
+from pilot_space.ai.tools.mcp_server import ToolContext, check_approval_from_db
 from pilot_space.infrastructure.logging import get_logger
 
 if TYPE_CHECKING:
@@ -118,6 +119,8 @@ def create_note_content_server(
     Returns:
         McpSdkServerConfig ready for ClaudeAgentOptions.mcp_servers.
     """
+
+    _chk = check_approval_from_db
 
     def _resolve_block_ref(ref_or_id: str) -> str:
         """Resolve ¶N reference to UUID if block_ref_map is available."""
@@ -313,7 +316,7 @@ def create_note_content_server(
             note_id,
             position,
         )
-        approval_level = get_tool_approval_level("insert_block")
+        approval_level = await _chk("insert_block", AT.INSERT_BLOCK, tool_context)
         status = "approval_required" if approval_level.value != "auto_execute" else "pending_apply"
         focus_id = before_block_id or after_block_id
 
@@ -376,7 +379,7 @@ def create_note_content_server(
         if ws_error:
             return _text_result(f"Error: {ws_error}")
         logger.info("[NoteContentTools] remove_block: note=%s, block=%s", note_id, block_id)
-        approval_level = get_tool_approval_level("remove_block")
+        approval_level = await _chk("remove_block", AT.REMOVE_BLOCK, tool_context)
         status = "approval_required" if approval_level.value != "auto_execute" else "pending_apply"
         await publisher.publish_focus_and_content(
             note_id or "",
@@ -432,7 +435,7 @@ def create_note_content_server(
             pattern,
             block_ids,
         )
-        approval_level = get_tool_approval_level("remove_content")
+        approval_level = await _chk("remove_content", AT.REMOVE_CONTENT, tool_context)
         status = "approval_required" if approval_level.value != "auto_execute" else "pending_apply"
         await publisher.publish_focus_and_content(
             note_id or "",
@@ -507,7 +510,7 @@ def create_note_content_server(
             new_content,
             block_ids,
         )
-        approval_level = get_tool_approval_level("replace_content")
+        approval_level = await _chk("replace_content", AT.REPLACE_CONTENT, tool_context)
         status = "approval_required" if approval_level.value != "auto_execute" else "pending_apply"
         focus_id = block_ids[0] if block_ids else None
         await publisher.publish_focus_and_content(
@@ -577,7 +580,7 @@ def create_note_content_server(
             note_id,
             block_type,
         )
-        approval_level = get_tool_approval_level("insert_block")
+        approval_level = await _chk("create_pm_block", AT.INSERT_BLOCK, tool_context)
         status = "approval_required" if approval_level.value != "auto_execute" else "pending_apply"
         await publisher.publish_focus_and_content(
             note_id or "",
@@ -648,7 +651,7 @@ def create_note_content_server(
             note_id,
             block_id,
         )
-        approval_level = get_tool_approval_level("update_pm_block")
+        approval_level = await _chk("update_pm_block", AT.REPLACE_CONTENT, tool_context)
         status = "approval_required" if approval_level.value != "auto_execute" else "pending_apply"
 
         pm_block_data: dict[str, Any] = {

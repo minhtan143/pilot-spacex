@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 
 ## Current Position
 
-Phase: Phase 17 — Skill Action Buttons
-Plan: 2/2
-Status: Phase 17 complete — all plans done
-Last activity: 2026-03-11 — 017-02 complete: API client, ActionButtonsTabContent admin UI, ActionButtonBar on issue page, chat activation wiring
+Phase: Phase 18 — Tech Debt Closure
+Plan: 2/4
+Status: Plan 02 complete — key rotation with dual-key fallback
+Last activity: 2026-03-11 — 018-02 complete: rotate_workspace_key with dual-key fallback, POST /encryption/rotate endpoint, 10 passing tests
 
 Progress: [██████████] 100%
 
@@ -42,7 +42,7 @@ Progress: [██████████] 100%
 | 15. Related Issues | Semantic suggestions + manual linking | RELISS-01..04 | Complete |
 | 16. Workspace Role Skills | Admin-generated role skills + inheritance | WRSKL-01..04 | Not started |
 | 17. Skill Action Buttons | Custom issue-page buttons bound to skills/MCP | SKBTN-01..04 | Complete |
-| 18. Tech Debt Closure | OIDC E2E, MCP approval, xfail tests, key rotation | DEBT-01..04 | Not started |
+| 18. Tech Debt Closure | OIDC E2E, MCP approval, xfail tests, key rotation | DEBT-01..04 | In progress |
 
 ## Performance Metrics
 
@@ -85,6 +85,7 @@ Progress: [██████████] 100%
 | Phase 019 P04 | 9 | 2 tasks | 12 files |
 | Phase 17-skill-action-buttons P01 | 7 | 2 tasks | 10 files |
 | Phase 17-skill-action-buttons P02 | 13 | 2 tasks | 9 files |
+| Phase 018-tech-debt-closure P02 | 10 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -190,6 +191,9 @@ Recent decisions affecting current work:
 - [Phase 17-skill-action-buttons 02]: Curated 15-icon ICON_MAP with Sparkles fallback -- avoids dynamic imports and bundle bloat from full lucide-react set
 - [Phase 17-skill-action-buttons 02]: Stale binding detection via binding_id + binding_metadata presence -- disables button with tooltip
 - [Phase 17-skill-action-buttons 02]: ActionButtonsTabContent is plain function component (not observer) -- uses TanStack Query only, no MobX needed
+- [Phase 018-tech-debt-closure 02]: previous_encrypted_key stored as nullable Text column -- cleared after re-encryption completes
+- [Phase 018-tech-debt-closure 02]: _re_encrypt_string returns None for non-decryptable content -- plaintext rows skipped, not failed
+- [Phase 018-tech-debt-closure 02]: Rotation endpoint returns 400 (not 422) for invalid key format -- distinguishes from PUT /key
 
 ### Pending Todos
 
@@ -203,7 +207,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T04:55:30.000Z
-Stopped at: Completed 17-02-PLAN.md
-Resume file: Phase 17 complete — all plans done
-Next action: Execute Phase 18 (Tech Debt Closure) or finalize milestone.
+Last session: 2026-03-11T06:26:43Z
+Stopped at: Completed 018-02-PLAN.md
+Resume file: .planning/phases/018-tech-debt-closure/18-02-SUMMARY.md
+Next action: Continue Phase 18 remaining plans.

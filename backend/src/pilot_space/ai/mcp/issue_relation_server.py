@@ -22,11 +22,12 @@ from uuid import UUID
 
 from claude_agent_sdk import McpSdkServerConfig, create_sdk_mcp_server, tool
 
+from pilot_space.ai.infrastructure.approval import ActionType as AT
 from pilot_space.ai.tools.entity_resolver import (
     EntityResolutionError,
     resolve_entity_id_strict,
 )
-from pilot_space.ai.tools.mcp_server import ToolContext, get_tool_approval_level
+from pilot_space.ai.tools.mcp_server import ToolContext, check_approval_from_db
 
 if TYPE_CHECKING:
     from pilot_space.ai.mcp.event_publisher import EventPublisher
@@ -196,6 +197,8 @@ def create_issue_relation_tools_server(
         McpSdkServerConfig ready for ClaudeAgentOptions.mcp_servers.
     """
 
+    _chk = check_approval_from_db
+
     @tool(
         "link_issue_to_note",
         "Link an issue to a note block. Creates a bidirectional relationship. "
@@ -255,7 +258,7 @@ def create_issue_relation_tools_server(
         if args.get("block_id"):
             payload["block_id"] = args["block_id"]
 
-        approval_level = get_tool_approval_level("link_issue_to_note")
+        approval_level = await _chk("link_issue_to_note", AT.LINK_ISSUE_TO_NOTE, tool_context)
         status = "approval_required" if approval_level.value != "auto_execute" else "pending_apply"
 
         logger.info(
@@ -404,7 +407,7 @@ def create_issue_relation_tools_server(
         if link_type in (IssueLinkType.BLOCKS, IssueLinkType.BLOCKED_BY):
             preview["note"] = "Inverse link will be created automatically"
 
-        approval_level = get_tool_approval_level("link_issues")
+        approval_level = await _chk("link_issues", AT.LINK_ISSUES, tool_context)
         status = "approval_required" if approval_level.value != "auto_execute" else "pending_apply"
 
         logger.info(
@@ -538,7 +541,7 @@ def create_issue_relation_tools_server(
             "workspace_id": tool_context.workspace_id,
         }
 
-        approval_level = get_tool_approval_level("add_sub_issue")
+        approval_level = await _chk("add_sub_issue", AT.ADD_SUB_ISSUE, tool_context)
         status = "approval_required" if approval_level.value != "auto_execute" else "pending_apply"
 
         logger.info(
@@ -605,7 +608,9 @@ def create_issue_relation_tools_server(
         if args.get("comment"):
             payload["comment"] = args["comment"]
 
-        approval_level = get_tool_approval_level("transition_issue_state")
+        approval_level = await _chk(
+            "transition_issue_state", AT.TRANSITION_ISSUE_STATE, tool_context
+        )
         status = "approval_required" if approval_level.value != "auto_execute" else "pending_apply"
 
         logger.info(

@@ -73,7 +73,7 @@
 - [x] **DEBT-01**: OIDC login flow verified end-to-end in browser (closes AUTH-02 gap from v1.0)
 - [ ] **DEBT-02**: `issue_relation_server` + `note_content_server` use `check_approval_from_db()` (closes AIGOV-01 gap)
 - [ ] **DEBT-03**: Async HTTP client fixture added — 2 xfail audit API tests now passing
-- [ ] **DEBT-04**: Key rotation re-encryption implemented (replaces xfail stub from v1.0 Phase 03)
+- [x] **DEBT-04**: Key rotation re-encryption implemented (replaces xfail stub from v1.0 Phase 03)
 
 ## v2 Requirements
 
@@ -142,7 +142,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEBT-01 | Phase 18 | Complete |
 | DEBT-02 | Phase 18 | Pending |
 | DEBT-03 | Phase 18 | Pending |
-| DEBT-04 | Phase 18 | Pending |
+| DEBT-04 | Phase 18 | Complete |
 
 **Coverage:**
 - v1 requirements: 39 total
