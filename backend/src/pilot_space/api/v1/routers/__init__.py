@@ -78,6 +78,7 @@ from pilot_space.api.v1.routers.sessions import router as workspace_sessions_rou
 from pilot_space.api.v1.routers.skill_approvals import router as skill_approvals_router
 from pilot_space.api.v1.routers.skill_templates import router as skill_templates_router
 from pilot_space.api.v1.routers.skills import router as skills_router
+from pilot_space.api.v1.routers.user_skills import router as user_skills_router
 from pilot_space.api.v1.routers.webhooks import router as webhooks_router
 from pilot_space.api.v1.routers.workspace_ai_settings import router as workspace_ai_settings_router
 from pilot_space.api.v1.routers.workspace_cycles import router as workspace_cycles_router
@@ -202,6 +203,7 @@ __all__ = [
     "skill_approvals_router",
     "skill_templates_router",
     "skills_router",
+    "user_skills_router",
     "webhooks_router",
     "workspace_ai_settings_router",
     "workspace_cycles_router",

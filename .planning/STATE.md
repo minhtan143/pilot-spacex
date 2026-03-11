@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-stopped_at: Completed 20-01-PLAN.md
-last_updated: "2026-03-11T13:36:26Z"
-last_activity: "2026-03-11 — 020-01 complete: SkillTemplate and UserSkill models, migration 077, repositories, 35 passing tests"
+stopped_at: Completed 20-02-PLAN.md
+last_updated: "2026-03-11T13:52:53Z"
+last_activity: "2026-03-11 — 020-02 complete: materializer reads new tables, SeedTemplatesService, CreateUserSkillService, 30 tests"
 progress:
   total_phases: 9
   completed_phases: 8
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: Phase 20 — Skill Template Catalog
-Plan: 1/4
-Status: Plan 01 complete — SkillTemplate + UserSkill persistence layer
-Last activity: 2026-03-11 — 020-01 complete: SkillTemplate and UserSkill models, migration 077, repositories, 35 passing tests
+Plan: 2/4
+Status: Plan 02 complete — Materializer refactor + core services
+Last activity: 2026-03-11 — 020-02 complete: materializer reads new tables, SeedTemplatesService, CreateUserSkillService, 30 tests
 
-Progress: [███░░░░░░░] 25%
+Progress: [█████░░░░░] 50%
 
 ## Milestone: v1.0-alpha
 
@@ -88,6 +88,7 @@ Progress: [███░░░░░░░] 25%
 | Phase 018-tech-debt-closure P02 | 10 | 2 tasks | 6 files |
 | Phase 018 P01 | 20min | 2 tasks | 9 files |
 | Phase 20-skill-template-catalog P01 | 6min | 2 tasks | 8 files |
+| Phase 20-skill-template-catalog P02 | 13min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -202,6 +203,10 @@ Recent decisions affecting current work:
 - [Phase 20-skill-template-catalog]: Partial unique index on (user_id, workspace_id, template_id) allows nullable template_id for custom skills
 - [Phase 20-skill-template-catalog]: Data migration uses LEFT JOIN for template_id linking -- custom role user_skills get template_id=NULL
 - [Phase 20-skill-template-catalog]: length() not char_length() in CheckConstraints -- ANSI SQL compatible with SQLite test DB
+- [Phase 20-skill-template-catalog 02]: New table path is primary, legacy is OperationalError fallback -- no feature flag needed
+- [Phase 20-skill-template-catalog 02]: Skill dir naming skill-{sanitized_name}-{id[:6]} balances readability and uniqueness
+- [Phase 20-skill-template-catalog 02]: SeedTemplatesService uses idempotency guard (check for existing built_in source)
+- [Phase 20-skill-template-catalog 02]: CreateUserSkillService reuses GenerateRoleSkillService for AI personalization
 - [Phase 018]: Used FastAPI dependency_overrides for audit test auth instead of middleware patching
 - [Phase 018]: Mocked AuditLogRepository at router level to avoid event loop issues with real DB sessions in tests
 
@@ -217,7 +222,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T13:36:26Z
-Stopped at: Completed 20-01-PLAN.md
-Resume file: .planning/phases/20-migrate-all-role-skill-template-of-each-role-then-user-setup-skill-can-pick-template-include-role-template-skill-do-not-depend-on-role/20-02-PLAN.md
-Next action: Execute Phase 20 Plan 02.
+Last session: 2026-03-11T13:52:53Z
+Stopped at: Completed 20-02-PLAN.md
+Resume file: .planning/phases/20-migrate-all-role-skill-template-of-each-role-then-user-setup-skill-can-pick-template-include-role-template-skill-do-not-depend-on-role/20-03-PLAN.md
+Next action: Execute Phase 20 Plan 03.
