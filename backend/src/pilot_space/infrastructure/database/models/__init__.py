@@ -100,6 +100,7 @@ from pilot_space.infrastructure.database.models.skill_execution import (
     SkillApprovalStatus,
     SkillExecution,
 )
+from pilot_space.infrastructure.database.models.skill_template import SkillTemplate
 from pilot_space.infrastructure.database.models.state import (
     DEFAULT_STATES,
     State,
@@ -116,6 +117,7 @@ from pilot_space.infrastructure.database.models.user_role_skill import (
     RoleTemplate,
     UserRoleSkill,
 )
+from pilot_space.infrastructure.database.models.user_skill import UserSkill
 from pilot_space.infrastructure.database.models.work_intent import (
     IntentArtifact,
     WorkIntent,
@@ -211,6 +213,7 @@ __all__ = [
     "SkillApprovalRole",
     "SkillApprovalStatus",
     "SkillExecution",
+    "SkillTemplate",
     "SlugMixin",
     "SoftDeleteMixin",
     "State",
@@ -223,6 +226,7 @@ __all__ = [
     "ToolCallStatus",
     "User",
     "UserRoleSkill",
+    "UserSkill",
     "VersionTrigger",
     "WorkIntent",
     "Workspace",
