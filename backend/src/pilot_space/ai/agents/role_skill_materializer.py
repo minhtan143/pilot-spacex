@@ -21,8 +21,10 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Prefix used for role skill directories to distinguish from system skills
-_ROLE_SKILL_PREFIX = "role-"
+# Prefix used for skill directories to distinguish from system skills
+_SKILL_PREFIX = "skill-"
+# Legacy prefix for transition cleanup (Phase 20: role- → skill-)
+_LEGACY_ROLE_PREFIX = "role-"
 
 
 async def materialize_role_skills(
@@ -60,7 +62,7 @@ async def materialize_role_skills(
     expected_dirs: set[str] = set()
 
     for skill in skills:
-        dir_name = f"{_ROLE_SKILL_PREFIX}{skill.role_type}"
+        dir_name = f"{_SKILL_PREFIX}{skill.role_type}"
         expected_dirs.add(dir_name)
         skill_dir = skills_dir / dir_name
 
@@ -92,7 +94,7 @@ async def materialize_role_skills(
     for ws_skill in workspace_skills:
         if ws_skill.role_type in user_role_types:
             continue  # WRSKL-04: personal skill takes precedence
-        dir_name = f"{_ROLE_SKILL_PREFIX}{ws_skill.role_type}"
+        dir_name = f"{_SKILL_PREFIX}{ws_skill.role_type}"
         expected_dirs.add(dir_name)
         skill_dir = skills_dir / dir_name
         frontmatter = _build_workspace_frontmatter(ws_skill.role_name, ws_skill.role_type)
@@ -153,8 +155,8 @@ def _build_frontmatter(role_name: str, role_type: str, is_primary: bool) -> str:
     """
     lines = [
         "---",
-        f"name: role-{role_type}",
-        f'description: "{role_name}" role skill for AI context personalization',
+        f"name: skill-{role_type}",
+        f'description: "{role_name}" skill for AI context personalization',
     ]
     if is_primary:
         lines.append("priority: primary")
@@ -174,8 +176,8 @@ def _build_workspace_frontmatter(role_name: str, role_type: str) -> str:
     """
     lines = [
         "---",
-        f"name: role-{role_type}",
-        f'description: "{role_name}" workspace role skill (inherited)',
+        f"name: skill-{role_type}",
+        f'description: "{role_name}" workspace skill (inherited)',
         "origin: workspace",
         "---",
     ]
@@ -183,10 +185,12 @@ def _build_workspace_frontmatter(role_name: str, role_type: str) -> str:
 
 
 def _cleanup_stale_role_skills(skills_dir: Path, expected_dirs: set[str]) -> None:
-    """Remove role-skill directories that are no longer active.
+    """Remove skill directories that are no longer active.
 
-    Only removes directories prefixed with ``role-``.  System skills
-    (e.g., ``extract-issues``) are never touched.
+    Removes directories prefixed with ``skill-`` that are not in the
+    expected set.  Also removes legacy ``role-`` directories from before
+    the Phase 20 rename.  System skills (e.g., ``extract-issues``) and
+    plugin skills (``plugin-``) are never touched.
 
     Args:
         skills_dir: Path to ``.claude/skills/``.
@@ -198,10 +202,16 @@ def _cleanup_stale_role_skills(skills_dir: Path, expected_dirs: set[str]) -> Non
     import shutil
 
     for entry in skills_dir.iterdir():
-        if entry.is_dir() and entry.name.startswith(_ROLE_SKILL_PREFIX):
+        if not entry.is_dir():
+            continue
+        # Clean legacy role- dirs unconditionally (Phase 20 transition)
+        if entry.name.startswith(_LEGACY_ROLE_PREFIX):
+            shutil.rmtree(entry, ignore_errors=True)
+            logger.debug("Cleaned up legacy role skill: %s", entry.name)
+        elif entry.name.startswith(_SKILL_PREFIX):
             if entry.name not in expected_dirs:
                 shutil.rmtree(entry, ignore_errors=True)
-                logger.debug("Cleaned up stale role skill: %s", entry.name)
+                logger.debug("Cleaned up stale skill: %s", entry.name)
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +322,8 @@ def _cleanup_stale_plugin_skills(skills_dir: Path, expected_dirs: set[str]) -> N
 
 
 __all__ = [
+    "_LEGACY_ROLE_PREFIX",
+    "_SKILL_PREFIX",
     "_build_workspace_frontmatter",
     "materialize_plugin_skills",
     "materialize_role_skills",

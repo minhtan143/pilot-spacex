@@ -14,10 +14,21 @@ from pilot_space.application.services.role_skill.types import VALID_ROLE_TYPES
 
 
 class GenerateWorkspaceSkillRequest(BaseModel):
-    """Request body for generating a workspace role skill."""
+    """Request body for generating a workspace skill.
 
-    role_type: str = Field(description=f"SDLC role type; one of: {sorted(VALID_ROLE_TYPES)}")
-    role_name: str = Field(description="Human-readable display name for the role")
+    Only ``experience_description`` is required — AI generates a skill name
+    and content from it.  ``role_type`` and ``role_name`` are kept for
+    backward compatibility but default to ``"custom"`` / ``""`` when omitted.
+    """
+
+    role_type: str = Field(
+        default="custom",
+        description=f"SDLC role type; one of: {sorted(VALID_ROLE_TYPES)}. Defaults to 'custom'.",
+    )
+    role_name: str = Field(
+        default="",
+        description="Human-readable display name. AI generates one when empty.",
+    )
     experience_description: str = Field(
         description="Natural language description of experience for AI generation"
     )

@@ -33,7 +33,7 @@ class TestBuildFrontmatter:
         result = _build_frontmatter("Senior Developer", "developer", is_primary=False)
         assert result.startswith("---\n")
         assert result.endswith("\n---")
-        assert "name: role-developer" in result
+        assert "name: skill-developer" in result
         assert 'description: "Senior Developer"' in result
         assert "priority" not in result
 
@@ -41,31 +41,42 @@ class TestBuildFrontmatter:
         """Primary role includes priority: primary."""
         result = _build_frontmatter("Lead Architect", "architect", is_primary=True)
         assert "priority: primary" in result
-        assert "name: role-architect" in result
+        assert "name: skill-architect" in result
 
 
 class TestCleanupStaleRoleSkills:
     """Tests for _cleanup_stale_role_skills helper."""
 
-    def test_removes_stale_role_dirs(self, tmp_path: Path) -> None:
-        """Removes role-* dirs not in expected set."""
+    def test_removes_stale_skill_dirs(self, tmp_path: Path) -> None:
+        """Removes skill-* dirs not in expected set."""
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
 
-        # Create some role dirs
-        (skills_dir / "role-developer").mkdir()
-        (skills_dir / "role-developer" / "SKILL.md").write_text("content")
-        (skills_dir / "role-tester").mkdir()
-        (skills_dir / "role-tester" / "SKILL.md").write_text("content")
+        (skills_dir / "skill-developer").mkdir()
+        (skills_dir / "skill-developer" / "SKILL.md").write_text("content")
+        (skills_dir / "skill-tester").mkdir()
+        (skills_dir / "skill-tester" / "SKILL.md").write_text("content")
 
         # Only keep developer
-        _cleanup_stale_role_skills(skills_dir, {"role-developer"})
+        _cleanup_stale_role_skills(skills_dir, {"skill-developer"})
 
-        assert (skills_dir / "role-developer").exists()
-        assert not (skills_dir / "role-tester").exists()
+        assert (skills_dir / "skill-developer").exists()
+        assert not (skills_dir / "skill-tester").exists()
+
+    def test_removes_legacy_role_dirs(self, tmp_path: Path) -> None:
+        """Phase 20 transition: legacy role-* dirs are always removed."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+
+        (skills_dir / "role-developer").mkdir()
+        (skills_dir / "role-developer" / "SKILL.md").write_text("content")
+
+        _cleanup_stale_role_skills(skills_dir, set())
+
+        assert not (skills_dir / "role-developer").exists()
 
     def test_preserves_system_skills(self, tmp_path: Path) -> None:
-        """System skills (without role- prefix) are never removed."""
+        """System skills (without skill-/role- prefix) are never removed."""
         skills_dir = tmp_path / "skills"
         skills_dir.mkdir()
 
@@ -125,11 +136,11 @@ class TestMaterializeRoleSkills:
         )
 
         assert count == 1
-        skill_file = skills_dir / "role-developer" / "SKILL.md"
+        skill_file = skills_dir / "skill-developer" / "SKILL.md"
         assert skill_file.exists()
 
         content = skill_file.read_text()
-        assert "name: role-developer" in content
+        assert "name: skill-developer" in content
         assert "priority: primary" in content
         assert "# Developer" in content
         assert "Write clean code." in content
@@ -174,7 +185,7 @@ class TestMaterializeRoleSkills:
         skills_dir.mkdir()
 
         # Pre-create a stale role skill dir
-        stale_dir = skills_dir / "role-tester"
+        stale_dir = skills_dir / "skill-tester"
         stale_dir.mkdir()
         (stale_dir / "SKILL.md").write_text("old content")
 
@@ -209,7 +220,7 @@ class TestMaterializeRoleSkills:
         # Stale tester dir should be removed
         assert not stale_dir.exists()
         # Developer dir should exist
-        assert (skills_dir / "role-developer" / "SKILL.md").exists()
+        assert (skills_dir / "skill-developer" / "SKILL.md").exists()
 
     async def test_multiple_skills_materialized(
         self,
@@ -252,14 +263,14 @@ class TestMaterializeRoleSkills:
         )
 
         assert count == 2
-        assert (skills_dir / "role-developer" / "SKILL.md").exists()
-        assert (skills_dir / "role-tester" / "SKILL.md").exists()
+        assert (skills_dir / "skill-developer" / "SKILL.md").exists()
+        assert (skills_dir / "skill-tester" / "SKILL.md").exists()
 
         # Check primary frontmatter
-        dev_content = (skills_dir / "role-developer" / "SKILL.md").read_text()
+        dev_content = (skills_dir / "skill-developer" / "SKILL.md").read_text()
         assert "priority: primary" in dev_content
 
-        tester_content = (skills_dir / "role-tester" / "SKILL.md").read_text()
+        tester_content = (skills_dir / "skill-tester" / "SKILL.md").read_text()
         assert "priority" not in tester_content
 
 

@@ -69,7 +69,7 @@ export const SkillCard = observer(function SkillCard({
         'rounded-lg border transition-shadow',
         skill.isPrimary ? 'border-2 border-primary bg-primary/5' : 'border-border bg-card'
       )}
-      aria-label={`${skill.roleName} role skill`}
+      aria-label={`${skill.roleName} skill`}
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 pb-3">

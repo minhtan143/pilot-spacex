@@ -34,8 +34,8 @@ export interface WorkspaceRoleSkillsResponse {
 }
 
 export interface GenerateWorkspaceSkillPayload {
-  role_type: SDLCRoleType;
-  role_name: string;
+  role_type?: SDLCRoleType;
+  role_name?: string;
   experience_description: string;
 }
 

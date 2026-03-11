@@ -1,7 +1,7 @@
 /**
  * SkillsSettingsPage - Workspace AI Skills configuration.
  *
- * T038: Main settings page for managing role-based skills (CRUD operations).
+ * Phase 20: Unified skill management with SkillGeneratorModal.
  * Source: FR-009, FR-010, FR-015, FR-018, US6
  */
 
@@ -13,19 +13,8 @@ import { useParams } from 'next/navigation';
 import { AlertCircle, Lock, MousePointerClick, Package, Plus, Wand2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
 import { useStore } from '@/stores';
 import {
   useRoleSkills,
@@ -34,12 +23,8 @@ import {
   useRegenerateSkill,
   useDeleteRoleSkill,
 } from '@/features/onboarding/hooks';
-import { RoleSelectorStep } from '@/features/onboarding/components/RoleSelectorStep';
-import { CustomRoleInput } from '@/features/onboarding/components/CustomRoleInput';
-import { SkillGenerationWizard } from '@/features/onboarding/components/SkillGenerationWizard';
 import {
   useWorkspaceRoleSkills,
-  useGenerateWorkspaceSkill,
   useActivateWorkspaceSkill,
   useDeleteWorkspaceSkill,
 } from '@/services/api/workspace-role-skills';
@@ -50,12 +35,11 @@ import { RegenerateSkillModal } from '../components/regenerate-skill-modal';
 import { ConfirmActionDialog } from '../components/confirm-action-dialog';
 import { PluginsTabContent } from '../components/plugins-tab-content';
 import { ActionButtonsTabContent } from '../components/action-buttons-tab-content';
+import { SkillGeneratorModal } from '../components/skill-generator-modal';
+import type { SkillGeneratorMode } from '../components/skill-generator-modal';
 import type { RoleSkill } from '@/services/api/role-skills';
-import type { SDLCRoleType } from '@/services/api/role-skills';
 
-type RoleSetupView = 'role_grid' | 'custom_role' | 'skill_wizard';
-
-const MAX_ROLES = 3;
+const MAX_SKILLS = 3;
 
 function LoadingSkeleton() {
   return (
@@ -75,14 +59,14 @@ function EmptyState({ onSetup }: { onSetup: () => void }) {
         <Wand2 className="h-6 w-6 text-muted-foreground/50" />
       </div>
       <div className="text-center">
-        <h3 className="text-sm font-medium text-foreground">No roles configured</h3>
+        <h3 className="text-sm font-medium text-foreground">No skills configured</h3>
         <p className="mt-0.5 text-xs text-muted-foreground max-w-[260px]">
-          Set up your SDLC role to personalize AI assistance.
+          Set up your skill to personalize AI assistance.
         </p>
       </div>
       <Button size="sm" onClick={onSetup}>
         <Plus className="mr-1.5 h-4 w-4" />
-        Set Up Your Role
+        Set Up Your Skill
       </Button>
     </div>
   );
@@ -94,7 +78,7 @@ function GuestView() {
       <Alert role="alert">
         <Lock className="h-4 w-4" />
         <AlertDescription>
-          Role skill configuration requires Member or higher access. Contact a workspace admin for
+          Skill configuration requires Member or higher access. Contact a workspace admin for
           permission.
         </AlertDescription>
       </Alert>
@@ -118,33 +102,17 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
 
   // Workspace skills state (admin only)
   const { data: wsSkillsData } = useWorkspaceRoleSkills(workspaceStore.isAdmin ? workspaceId : '');
-  const generateWsSkill = useGenerateWorkspaceSkill({ workspaceId });
   const activateWsSkill = useActivateWorkspaceSkill({ workspaceId });
   const deleteWsSkill = useDeleteWorkspaceSkill({ workspaceId });
   const [wsSkillToRemove, setWsSkillToRemove] = React.useState<WorkspaceRoleSkill | null>(null);
-  const [wsGenerateOpen, setWsGenerateOpen] = React.useState(false);
-  const [wsRoleType, setWsRoleType] = React.useState<SDLCRoleType | ''>('');
-  const [wsRoleName, setWsRoleName] = React.useState('');
-  const [wsExpDescription, setWsExpDescription] = React.useState('');
 
-  const handleWsGenerateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!wsRoleType) return;
-    generateWsSkill.mutate(
-      {
-        role_type: wsRoleType as SDLCRoleType,
-        role_name: wsRoleName,
-        experience_description: wsExpDescription,
-      },
-      {
-        onSuccess: () => {
-          setWsGenerateOpen(false);
-          setWsRoleType('');
-          setWsRoleName('');
-          setWsExpDescription('');
-        },
-      }
-    );
+  // Unified skill generator modal state
+  const [generatorOpen, setGeneratorOpen] = React.useState(false);
+  const [generatorMode, setGeneratorMode] = React.useState<SkillGeneratorMode>('personal');
+
+  const openGenerator = (mode: SkillGeneratorMode) => {
+    setGeneratorMode(mode);
+    setGeneratorOpen(true);
   };
 
   const handleWsRemoveConfirm = () => {
@@ -159,21 +127,16 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
   const [removeTarget, setRemoveTarget] = React.useState<RoleSkill | null>(null);
   const [resetTarget, setResetTarget] = React.useState<RoleSkill | null>(null);
 
-  // Tab state for switching action buttons
-  const [activeTab, setActiveTab] = React.useState('roles');
+  // Tab state
+  const [activeTab, setActiveTab] = React.useState('skills');
   const [addPluginDialogOpen, setAddPluginDialogOpen] = React.useState(false);
 
-  // Role setup dialog sub-flow state
-  const [isSetupOpen, setIsSetupOpen] = React.useState(false);
-  const [roleSetupView, setRoleSetupView] = React.useState<RoleSetupView>('role_grid');
-  const [currentWizardIndex, setCurrentWizardIndex] = React.useState(0);
-
   const skillCount = skills?.length ?? 0;
-  const slotsLeft = MAX_ROLES - skillCount;
-  const isMaxReached = skillCount >= MAX_ROLES;
-
-  // Check if user is guest
+  const slotsLeft = MAX_SKILLS - skillCount;
+  const isMaxReached = skillCount >= MAX_SKILLS;
   const isGuest = workspaceStore.currentUserRole === 'guest';
+  const wsSkillCount = wsSkillsData?.skills.length ?? 0;
+  const hasAnySkills = skillCount > 0 || wsSkillCount > 0;
 
   const handleEdit = (skillId: string, content: string) => {
     updateSkill.mutate(
@@ -191,7 +154,7 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
     if (!regenerateTarget) throw new Error('No target skill');
     return regenerateSkill.mutateAsync({
       skillId: regenerateTarget.id,
-      payload: { experienceDescription: experienceDescription },
+      payload: { experienceDescription },
     });
   };
 
@@ -240,73 +203,6 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
     });
   };
 
-  const existingSkillRoleTypes = React.useMemo(
-    () => (skills ?? []).map((s) => s.roleType),
-    [skills]
-  );
-
-  const closeSetupDialog = React.useCallback(() => {
-    setIsSetupOpen(false);
-    setRoleSetupView('role_grid');
-    setCurrentWizardIndex(0);
-    roleSkillStore.setGenerationStep(null);
-  }, [roleSkillStore]);
-
-  const handleSetupRole = () => {
-    roleSkillStore.clearSelectedRoles();
-    roleSkillStore.setGenerationStep('select');
-    setRoleSetupView('role_grid');
-    setIsSetupOpen(true);
-  };
-
-  const handleRoleContinue = () => {
-    if (roleSkillStore.selectedRoles.length === 0) return;
-    setCurrentWizardIndex(0);
-    roleSkillStore.setGenerationStep('form');
-    setRoleSetupView('skill_wizard');
-  };
-
-  const handleCustomRole = () => {
-    setRoleSetupView('custom_role');
-  };
-
-  const handleCustomRoleBack = () => {
-    setRoleSetupView('role_grid');
-  };
-
-  const handleCustomRoleGenerate = () => {
-    if (!roleSkillStore.selectedRoles.includes('custom')) {
-      roleSkillStore.toggleRole('custom');
-    }
-    setCurrentWizardIndex(roleSkillStore.selectedRoles.indexOf('custom'));
-    roleSkillStore.setGenerationStep('form');
-    roleSkillStore.setExperienceDescription(roleSkillStore.customRoleDescription);
-    setRoleSetupView('skill_wizard');
-  };
-
-  const handleWizardBack = () => {
-    if (currentWizardIndex > 0) {
-      setCurrentWizardIndex(currentWizardIndex - 1);
-      roleSkillStore.setGenerationStep('form');
-    } else {
-      setRoleSetupView('role_grid');
-    }
-  };
-
-  const handleWizardComplete = () => {
-    const nextIndex = currentWizardIndex + 1;
-    if (nextIndex < roleSkillStore.selectedRoles.length) {
-      setCurrentWizardIndex(nextIndex);
-      roleSkillStore.setGenerationStep('form');
-    } else {
-      closeSetupDialog();
-    }
-  };
-
-  const currentWizardRole = roleSkillStore.selectedRoles[currentWizardIndex];
-  const currentTemplate = templates?.find((t) => t.roleType === currentWizardRole);
-  const needsWideModal = roleSetupView === 'skill_wizard' || roleSetupView === 'custom_role';
-
   if (isGuest) {
     return (
       <div className="px-4 py-4 sm:px-6 lg:px-8">
@@ -344,9 +240,9 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="flex items-center justify-between gap-3">
           <TabsList>
-            <TabsTrigger value="roles">
+            <TabsTrigger value="skills">
               <Wand2 className="mr-1.5 h-4 w-4" />
-              Roles
+              Skills
             </TabsTrigger>
             {workspaceStore.isAdmin && (
               <TabsTrigger value="plugins">
@@ -361,15 +257,15 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
               </TabsTrigger>
             )}
           </TabsList>
-          {activeTab === 'roles' && (
+          {activeTab === 'skills' && (
             <Button
               size="sm"
-              onClick={handleSetupRole}
+              onClick={() => openGenerator('personal')}
               disabled={isMaxReached}
-              aria-describedby={isMaxReached ? 'max-roles-hint' : undefined}
+              aria-describedby={isMaxReached ? 'max-skills-hint' : undefined}
             >
               <Plus className="mr-1.5 h-4 w-4" />
-              Add Role
+              Add Skill
               {!isMaxReached && slotsLeft > 0 && (
                 <span className="ml-1 text-xs opacity-70">({slotsLeft})</span>
               )}
@@ -383,24 +279,25 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
           )}
         </div>
 
-        <TabsContent value="roles">
+        <TabsContent value="skills">
           <div className="space-y-4 pt-3">
-            {/* Max roles warning */}
+            {/* Max skills warning */}
             {isMaxReached && (
-              <Alert id="max-roles-hint">
+              <Alert id="max-skills-hint">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  Maximum {MAX_ROLES} roles per workspace reached. Remove an existing role to add a
-                  new one.
+                  Maximum {MAX_SKILLS} skills per workspace reached. Remove an existing skill to add
+                  a new one.
                 </AlertDescription>
               </Alert>
             )}
 
-            {/* Skills list or empty state */}
-            {skills && skills.length > 0 ? (
+            {/* Unified skills list: personal + workspace skills */}
+            {hasAnySkills ? (
               <div className="space-y-4">
+                {/* Personal skills */}
                 {skills
-                  .slice()
+                  ?.slice()
                   .sort((a, b) => {
                     if (a.isPrimary && !b.isPrimary) return -1;
                     if (!a.isPrimary && b.isPrimary) return 1;
@@ -417,30 +314,10 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
                       isSaving={updateSkill.isPending}
                     />
                   ))}
-              </div>
-            ) : (
-              <EmptyState onSetup={handleSetupRole} />
-            )}
-          </div>
 
-          {/* Workspace Skills (admin only) */}
-          {workspaceStore.isAdmin && (
-            <div className="space-y-3 border-t pt-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-foreground">Workspace Skills</h2>
-                  <p className="text-xs text-muted-foreground">
-                    AI skills inherited by members with a matching role.
-                  </p>
-                </div>
-                <Button onClick={() => setWsGenerateOpen(true)} size="sm" variant="outline">
-                  <Plus className="mr-1.5 h-4 w-4" />
-                  Generate Skill
-                </Button>
-              </div>
-              {wsSkillsData && wsSkillsData.skills.length > 0 ? (
-                <div className="space-y-4">
-                  {wsSkillsData.skills.map((skill) => (
+                {/* Workspace skills (admin sees management cards) */}
+                {workspaceStore.isAdmin &&
+                  wsSkillsData?.skills.map((skill) => (
                     <WorkspaceSkillCard
                       key={skill.id}
                       skill={skill}
@@ -452,12 +329,11 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
                       isRemoving={deleteWsSkill.isPending}
                     />
                   ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No workspace skills configured yet.</p>
-              )}
-            </div>
-          )}
+              </div>
+            ) : (
+              <EmptyState onSetup={() => openGenerator('personal')} />
+            )}
+          </div>
 
           {/* Regenerate Modal */}
           {regenerateTarget && (
@@ -477,9 +353,9 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
               open={!!removeTarget}
               onCancel={() => setRemoveTarget(null)}
               onConfirm={handleRemoveConfirm}
-              title={`Remove ${removeTarget.roleName} Role?`}
+              title={`Remove ${removeTarget.roleName} Skill?`}
               description={`This will deactivate the ${removeTarget.roleName} skill for this workspace. The AI assistant will no longer use ${removeTarget.roleName}-specific behavior in your conversations. Your skill content will be permanently deleted.`}
-              confirmLabel="Remove Role"
+              confirmLabel="Remove Skill"
               variant="destructive"
             />
           )}
@@ -497,75 +373,6 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
             />
           )}
 
-          {/* Workspace skill generate dialog */}
-          <Dialog open={wsGenerateOpen} onOpenChange={(open) => !open && setWsGenerateOpen(false)}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Generate Workspace Skill</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleWsGenerateSubmit} className="space-y-4 pt-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="ws-role-type">Role Type</Label>
-                  <Select
-                    value={wsRoleType}
-                    onValueChange={(v) => setWsRoleType(v as SDLCRoleType)}
-                  >
-                    <SelectTrigger id="ws-role-type">
-                      <SelectValue placeholder="Select a role type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="developer">Developer</SelectItem>
-                      <SelectItem value="tester">Tester</SelectItem>
-                      <SelectItem value="architect">Architect</SelectItem>
-                      <SelectItem value="tech_lead">Tech Lead</SelectItem>
-                      <SelectItem value="product_owner">Product Owner</SelectItem>
-                      <SelectItem value="business_analyst">Business Analyst</SelectItem>
-                      <SelectItem value="project_manager">Project Manager</SelectItem>
-                      <SelectItem value="devops">DevOps</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="ws-role-name">Role Name</Label>
-                  <Input
-                    id="ws-role-name"
-                    value={wsRoleName}
-                    onChange={(e) => setWsRoleName(e.target.value)}
-                    placeholder="e.g. Senior Developer"
-                    required
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="ws-exp-description">Experience Description</Label>
-                  <Textarea
-                    id="ws-exp-description"
-                    value={wsExpDescription}
-                    onChange={(e) => setWsExpDescription(e.target.value)}
-                    placeholder="Describe the experience level and context for this role"
-                    rows={3}
-                  />
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setWsGenerateOpen(false)}
-                    disabled={generateWsSkill.isPending}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={!wsRoleType || !wsRoleName || generateWsSkill.isPending}
-                  >
-                    {generateWsSkill.isPending ? 'Generating…' : 'Generate'}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-
           {/* Workspace skill remove confirmation */}
           {wsSkillToRemove && (
             <ConfirmActionDialog
@@ -579,40 +386,14 @@ export const SkillsSettingsPage = observer(function SkillsSettingsPage() {
             />
           )}
 
-          {/* Role setup dialog */}
-          <Dialog open={isSetupOpen} onOpenChange={(open) => !open && closeSetupDialog()}>
-            <DialogContent className={needsWideModal ? 'sm:max-w-4xl' : 'sm:max-w-xl'}>
-              <div className="py-2">
-                {roleSetupView === 'role_grid' && (
-                  <RoleSelectorStep
-                    existingSkillRoleTypes={existingSkillRoleTypes}
-                    onContinue={handleRoleContinue}
-                    onSkip={closeSetupDialog}
-                    onBack={closeSetupDialog}
-                    onCustomRole={handleCustomRole}
-                  />
-                )}
-                {roleSetupView === 'custom_role' && (
-                  <CustomRoleInput
-                    onBack={handleCustomRoleBack}
-                    onGenerate={handleCustomRoleGenerate}
-                    isGenerating={roleSkillStore.isGenerating}
-                  />
-                )}
-                {roleSetupView === 'skill_wizard' && currentWizardRole && (
-                  <SkillGenerationWizard
-                    roleType={currentWizardRole}
-                    template={currentTemplate}
-                    workspaceId={workspaceId}
-                    onBack={handleWizardBack}
-                    onComplete={handleWizardComplete}
-                    currentIndex={currentWizardIndex + 1}
-                    totalRoles={roleSkillStore.selectedRoles.length}
-                  />
-                )}
-              </div>
-            </DialogContent>
-          </Dialog>
+          {/* Unified Skill Generator Modal */}
+          <SkillGeneratorModal
+            open={generatorOpen}
+            onOpenChange={setGeneratorOpen}
+            defaultMode={generatorMode}
+            showModeToggle={workspaceStore.isAdmin}
+            workspaceId={workspaceId}
+          />
         </TabsContent>
 
         {workspaceStore.isAdmin && (

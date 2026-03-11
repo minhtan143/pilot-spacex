@@ -69,6 +69,7 @@ vi.mock('@/features/onboarding/hooks', () => ({
   useRegenerateSkill: () => ({ mutateAsync: mockRegenerateMutateAsync, isPending: false }),
   useDeleteRoleSkill: () => ({ mutate: mockDeleteMutate }),
   useCreateRoleSkill: () => ({ mutate: mockCreateMutate }),
+  useGenerateSkill: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/lib/supabase', () => ({
@@ -79,6 +80,13 @@ vi.mock('@/lib/supabase', () => ({
 
 vi.mock('@/services/api', () => ({
   apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(), patch: vi.fn() },
+}));
+
+vi.mock('@/services/api/workspace-role-skills', () => ({
+  useWorkspaceRoleSkills: () => ({ data: { skills: [] } }),
+  useActivateWorkspaceSkill: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteWorkspaceSkill: () => ({ mutate: vi.fn(), isPending: false }),
+  useGenerateWorkspaceSkill: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/components/role-skill/role-icons', () => ({
@@ -183,8 +191,8 @@ describe('SkillsSettingsPage', () => {
       });
 
       render(<SkillsSettingsPage />);
-      expect(screen.getByText('No roles configured')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Set Up Your Role/ })).toBeInTheDocument();
+      expect(screen.getByText('No skills configured')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Set Up Your Skill/ })).toBeInTheDocument();
     });
   });
 
@@ -198,7 +206,7 @@ describe('SkillsSettingsPage', () => {
       });
 
       render(<SkillsSettingsPage />);
-      expect(screen.getByText('Roles')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Skills' })).toBeInTheDocument();
       expect(screen.getByText('Developer')).toBeInTheDocument();
       expect(screen.getByText('Tester')).toBeInTheDocument();
       expect(screen.getByText('PRIMARY')).toBeInTheDocument();
@@ -213,10 +221,10 @@ describe('SkillsSettingsPage', () => {
       });
 
       render(<SkillsSettingsPage />);
-      expect(screen.getByText('1 slot left')).toBeInTheDocument();
+      expect(screen.getByText('(1)')).toBeInTheDocument();
     });
 
-    it('should render Add Role button', () => {
+    it('should render Add Skill button', () => {
       mockUseRoleSkills.mockReturnValue({
         data: mockSkills,
         isLoading: false,
@@ -225,7 +233,7 @@ describe('SkillsSettingsPage', () => {
       });
 
       render(<SkillsSettingsPage />);
-      expect(screen.getByRole('button', { name: /Add Role/ })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /Add Skill/ })).toBeEnabled();
     });
 
     it('should show primary skill first', () => {
@@ -238,12 +246,12 @@ describe('SkillsSettingsPage', () => {
 
       render(<SkillsSettingsPage />);
       const articles = screen.getAllByRole('article');
-      expect(articles[0]).toHaveAttribute('aria-label', 'Developer role skill');
+      expect(articles[0]).toHaveAttribute('aria-label', 'Developer skill');
     });
   });
 
-  describe('max roles', () => {
-    it('should show warning and disable Add when 3 roles configured', () => {
+  describe('max skills', () => {
+    it('should show warning and disable Add when 3 skills configured', () => {
       const threeSkills = [
         ...mockSkills,
         {
@@ -263,8 +271,8 @@ describe('SkillsSettingsPage', () => {
       });
 
       render(<SkillsSettingsPage />);
-      expect(screen.getByText(/Maximum 3 roles per workspace reached/)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Add Role/ })).toBeDisabled();
+      expect(screen.getByText(/Maximum 3 skills per workspace reached/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Add Skill/ })).toBeDisabled();
     });
   });
 
@@ -297,7 +305,7 @@ describe('SkillsSettingsPage', () => {
       const removeButtons = screen.getAllByRole('button', { name: /Remove/ });
       await user.click(removeButtons[0]!);
 
-      expect(screen.getByText(/Remove Developer Role\?/)).toBeInTheDocument();
+      expect(screen.getByText(/Remove Developer Skill\?/)).toBeInTheDocument();
       expect(screen.getByText(/permanently deleted/)).toBeInTheDocument();
     });
 
@@ -314,7 +322,7 @@ describe('SkillsSettingsPage', () => {
       const removeButtons = screen.getAllByRole('button', { name: /Remove/ });
       await user.click(removeButtons[0]!);
 
-      const confirmButton = screen.getByRole('button', { name: /Remove Role/ });
+      const confirmButton = screen.getByRole('button', { name: /Remove Skill/ });
       await user.click(confirmButton);
 
       expect(mockDeleteMutate).toHaveBeenCalledWith('skill-1', expect.any(Object));
