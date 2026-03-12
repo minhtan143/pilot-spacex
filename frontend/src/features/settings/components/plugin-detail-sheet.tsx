@@ -55,7 +55,7 @@ export function PluginDetailDialog({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                  className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
                 >
                   <ArrowUpCircle className="mr-1.5 h-3.5 w-3.5" />
                   Update

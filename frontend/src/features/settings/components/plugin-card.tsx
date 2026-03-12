@@ -67,7 +67,7 @@ export function PluginCard({ group, onToggle, onClick }: PluginCardProps) {
               {group.hasUpdate && (
                 <Badge
                   variant="outline"
-                  className="border-blue-500/20 bg-blue-500/10 text-blue-400 text-[10px] px-1.5 py-0 h-5"
+                  className="border-amber-500/20 bg-amber-500/10 text-amber-400 text-[10px] px-1.5 py-0 h-5"
                   data-testid="badge-update"
                 >
                   Update

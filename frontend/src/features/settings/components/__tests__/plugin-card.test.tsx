@@ -57,6 +57,32 @@ describe('PluginCard', () => {
     expect(screen.getByTestId('badge-update')).toBeInTheDocument();
   });
 
+  it('renders Update badge with amber color classes (not blue)', () => {
+    const group = makeGroup({ hasUpdate: true });
+    render(<PluginCard group={group} onToggle={vi.fn()} onClick={vi.fn()} />);
+
+    const badge = screen.getByTestId('badge-update');
+    expect(badge.className).toContain('border-amber-500/20');
+    expect(badge.className).toContain('bg-amber-500/10');
+    expect(badge.className).toContain('text-amber-400');
+    expect(badge.className).not.toContain('blue');
+  });
+
+  it('does not show Update badge when no update available', () => {
+    const group = makeGroup({ hasUpdate: false });
+    render(<PluginCard group={group} onToggle={vi.fn()} onClick={vi.fn()} />);
+
+    expect(screen.queryByTestId('badge-update')).not.toBeInTheDocument();
+  });
+
+  it('reduces opacity when no skills are active', () => {
+    const group = makeGroup({ skillCount: 2, activeCount: 0 });
+    render(<PluginCard group={group} onToggle={vi.fn()} onClick={vi.fn()} />);
+
+    const card = screen.getByTestId('plugin-card');
+    expect(card.className).toContain('opacity-75');
+  });
+
   it('calls onClick when card is clicked', async () => {
     const user = userEvent.setup();
     const onClick = vi.fn();
