@@ -23,13 +23,42 @@ from pilot_space.api.v1.schemas.project import (
     ProjectUpdate,
     StateResponse,
 )
+from pilot_space.config import get_settings
 from pilot_space.dependencies.auth import CurrentUser, SessionDep
 from pilot_space.infrastructure.database.models.project import Project
 from pilot_space.infrastructure.logging import get_logger
+from pilot_space.infrastructure.queue.supabase_queue import SupabaseQueueClient
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+async def _enqueue_kg_populate(project: Project) -> None:
+    """Enqueue a KG populate job for a project (non-fatal)."""
+    try:
+        settings = get_settings()
+        queue = SupabaseQueueClient(
+            supabase_url=settings.supabase_url,
+            service_key=settings.supabase_service_key.get_secret_value(),
+        )
+        from pilot_space.infrastructure.queue.models import QueueName
+
+        try:
+            await queue.enqueue(
+                QueueName.AI_NORMAL,
+                {
+                    "task_type": "kg_populate",
+                    "entity_type": "project",
+                    "entity_id": str(project.id),
+                    "workspace_id": str(project.workspace_id),
+                    "project_id": str(project.id),
+                },
+            )
+        finally:
+            await queue.close()
+    except Exception as exc:
+        logger.warning("projects router: failed to enqueue kg_populate: %s", exc)
 
 
 async def _project_to_response(
@@ -251,6 +280,8 @@ async def create_project(
         },
     )
 
+    await _enqueue_kg_populate(project)
+
     return await _project_to_response(project, project_repo)
 
 
@@ -331,6 +362,11 @@ async def update_project(
         for key, value in update_data.items():
             setattr(project, key, value)
         project = await project_repo.update(project)
+
+        # Enqueue KG populate on content-relevant changes
+        kg_relevant_fields = {"name", "description"}
+        if kg_relevant_fields & set(update_data.keys()):
+            await _enqueue_kg_populate(project)
 
     logger.info("Project updated", extra={"project_id": str(project_id)})
 

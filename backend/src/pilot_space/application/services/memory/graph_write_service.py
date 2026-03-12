@@ -150,6 +150,8 @@ class GraphWriteService:
         knowledge_graph_repository: KnowledgeGraphRepository,
         queue: SupabaseQueueClient | None,
         session: AsyncSession,
+        *,
+        auto_commit: bool = True,
     ) -> None:
         """Initialize service.
 
@@ -157,10 +159,13 @@ class GraphWriteService:
             knowledge_graph_repository: Repository for graph persistence.
             queue: Queue client for embedding job enqueue (None to skip enqueue).
             session: Async DB session.
+            auto_commit: If True (default), commit the session after write.
+                Set to False when the caller (e.g. worker) owns the commit.
         """
         self._repo = knowledge_graph_repository
         self._queue = queue
         self._session = session
+        self._auto_commit = auto_commit
 
     async def execute(self, payload: GraphWritePayload) -> GraphWriteResult:
         """Upsert nodes and edges, then enqueue embedding jobs.
@@ -222,23 +227,28 @@ class GraphWriteService:
         persisted_edges: list[GraphEdge] = []
         failed_edge_count = 0
         for ei in payload.edges:
-            edge, failed = await self._upsert_edge_input(ei, ext_id_map)
+            edge, failed = await self._upsert_edge_input(ei, ext_id_map, payload.workspace_id)
             if edge is not None:
                 persisted_edges.append(edge)
             failed_edge_count += failed
 
-        # Step 5 + 6: auto-detect issue references, then commit everything together
+        # Step 5 + 6: auto-detect issue references, then flush to assign IDs
         auto_edges = await self._detect_issue_references(persisted_nodes)
         persisted_edges = persisted_edges + auto_edges
-        await self._session.commit()
+        await self._session.flush()
 
-        # Step 7: enqueue embedding jobs (skipped when no queue client configured)
+        # Step 7: enqueue embedding jobs BEFORE commit so crash-recovery
+        # doesn't leave nodes without embeddings (C-2 fix)
         node_ids = [n.id for n in persisted_nodes]
         embedding_enqueued = (
             await self._enqueue_embedding_jobs(node_ids, payload.workspace_id)
             if self._queue is not None
             else False
         )
+
+        # Step 8: commit only when we own the transaction
+        if self._auto_commit:
+            await self._session.commit()
 
         logger.info(
             "GraphWriteService: workspace=%s nodes=%d edges=%d embedding=%s",
@@ -263,6 +273,7 @@ class GraphWriteService:
         self,
         ei: EdgeInput,
         ext_id_map: dict[UUID, UUID],
+        workspace_id: UUID,
     ) -> tuple[GraphEdge | None, int]:
         """Resolve edge endpoints and upsert.
 
@@ -270,6 +281,7 @@ class GraphWriteService:
             ei: Edge input specification.
             ext_id_map: Mapping from external_id to node_id for nodes
                 persisted in the current batch.
+            workspace_id: Workspace for cross-batch DB lookup.
 
         Returns:
             Tuple of (persisted GraphEdge or None, failed_count: 0 or 1).
@@ -280,6 +292,12 @@ class GraphWriteService:
         target_id = ei.target_node_id or (
             ext_id_map.get(ei.target_external_id) if ei.target_external_id else None
         )
+
+        # H-3: Fall back to DB lookup for cross-batch external IDs
+        if source_id is None and ei.source_external_id is not None:
+            source_id = await self._resolve_external_id(ei.source_external_id, workspace_id)
+        if target_id is None and ei.target_external_id is not None:
+            target_id = await self._resolve_external_id(ei.target_external_id, workspace_id)
 
         if source_id is None or target_id is None:
             logger.warning(
@@ -312,6 +330,20 @@ class GraphWriteService:
                 exc_info=True,
             )
             return None, 1
+
+    async def _resolve_external_id(self, external_id: UUID, workspace_id: UUID) -> UUID | None:
+        """Look up a node by external_id in the DB (cross-batch fallback)."""
+        stmt = (
+            select(GraphNodeModel.id)
+            .where(
+                GraphNodeModel.workspace_id == workspace_id,
+                GraphNodeModel.external_id == external_id,
+                GraphNodeModel.is_deleted == False,  # noqa: E712
+            )
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def _detect_issue_references(
         self,

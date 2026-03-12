@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from pilot_space.infrastructure.database.repositories.audit_log_repository import (
         AuditLogRepository,
     )
+    from pilot_space.infrastructure.queue.supabase_queue import SupabaseQueueClient
 
 logger = get_logger(__name__)
 
@@ -102,6 +103,7 @@ class UpdateIssueService:
         issue_repository: IssueRepository,
         activity_repository: ActivityRepository,
         label_repository: LabelRepository,
+        queue: SupabaseQueueClient | None = None,
         audit_log_repository: AuditLogRepository | None = None,
     ) -> None:
         """Initialize service.
@@ -111,12 +113,14 @@ class UpdateIssueService:
             issue_repository: Issue repository.
             activity_repository: Activity repository.
             label_repository: Label repository.
+            queue: Optional queue client for KG population.
             audit_log_repository: Optional audit log repository for compliance writes.
         """
         self._session = session
         self._issue_repo = issue_repository
         self._activity_repo = activity_repository
         self._label_repo = label_repository
+        self._queue = queue
         self._audit_repo = audit_log_repository
 
     async def execute(self, payload: UpdateIssuePayload) -> UpdateIssueResult:
@@ -469,6 +473,29 @@ class UpdateIssueService:
                 "changed_fields": changed_fields,
             },
         )
+
+        # Enqueue KG populate on content-relevant changes (non-fatal)
+        kg_relevant_fields = {"name", "description"}
+        if (
+            self._queue is not None
+            and issue is not None
+            and kg_relevant_fields & set(changed_fields)
+        ):
+            try:
+                from pilot_space.infrastructure.queue.models import QueueName
+
+                await self._queue.enqueue(
+                    QueueName.AI_NORMAL,
+                    {
+                        "task_type": "kg_populate",
+                        "entity_type": "issue",
+                        "entity_id": str(issue.id),
+                        "workspace_id": str(issue.workspace_id),
+                        "project_id": str(issue.project_id),
+                    },
+                )
+            except Exception as exc:
+                logger.warning("UpdateIssueService: failed to enqueue kg_populate: %s", exc)
 
         # Write audit log entry for update (non-fatal)
         if self._audit_repo is not None and issue is not None and changed_fields:

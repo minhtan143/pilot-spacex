@@ -5,8 +5,12 @@ Covers:
 - Unknown entity_type → error
 - Issue not found → error
 - Note not found → error
+- Project not found → error
+- Cycle not found → error
 - Happy path issue: IssueNode upserted, similarity search performed
 - Happy path note: NoteNode + NOTE_CHUNK nodes created, PARENT_OF edges added
+- Happy path project: ProjectNode upserted, similarity search performed
+- Happy path cycle: CycleNode upserted, similarity search performed
 - Similarity below threshold → no RELATES_TO edge
 - Similarity above threshold → RELATES_TO edge created
 - Embedding service returns None → graceful degradation (text-only search)
@@ -33,6 +37,7 @@ _WORKSPACE_ID = uuid4()
 _PROJECT_ID = uuid4()
 _ISSUE_ID = uuid4()
 _NOTE_ID = uuid4()
+_CYCLE_ID = uuid4()
 
 
 def _make_session() -> AsyncMock:
@@ -267,10 +272,10 @@ class TestHandleNote:
 
     async def test_note_not_found_returns_error(self) -> None:
         session = _make_session()
-        # execute returns scalar_one_or_none → None
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        session.execute.return_value = mock_result
+        # First execute: advisory lock (ignored), second: note query
+        mock_note_result = MagicMock()
+        mock_note_result.scalar_one_or_none.return_value = None
+        session.execute = AsyncMock(side_effect=[MagicMock(), mock_note_result])
 
         handler = _make_handler(session)
         result = await handler.handle(self._valid_payload())
@@ -305,9 +310,10 @@ class TestHandleNote:
             ],
         }
 
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = note
-        session.execute.return_value = mock_result
+        mock_note_result = MagicMock()
+        mock_note_result.scalar_one_or_none.return_value = note
+        # First: advisory lock, second: note query, rest: stale chunk delete etc.
+        session.execute = AsyncMock(side_effect=[MagicMock(), mock_note_result, MagicMock()])
 
         parent_result = MagicMock()
         parent_result.node_ids = [uuid4()]
@@ -367,9 +373,10 @@ class TestHandleNote:
                 }
             ],
         }
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = note
-        session.execute.return_value = mock_result
+        mock_note_result = MagicMock()
+        mock_note_result.scalar_one_or_none.return_value = note
+        # First: advisory lock, second: note query, third: stale chunk delete
+        session.execute = AsyncMock(side_effect=[MagicMock(), mock_note_result, MagicMock()])
 
         write_result = MagicMock()
         write_result.node_ids = [uuid4()]
@@ -395,6 +402,350 @@ class TestHandleNote:
             result = await handler.handle(self._valid_payload())
 
         assert result["success"] is True
+
+
+class TestHandleProject:
+    def _valid_payload(self) -> dict:
+        return {
+            "workspace_id": str(_WORKSPACE_ID),
+            "project_id": str(_PROJECT_ID),
+            "entity_type": "project",
+            "entity_id": str(_PROJECT_ID),
+        }
+
+    async def test_project_not_found_returns_error(self) -> None:
+        session = _make_session()
+        session.get.return_value = None
+        handler = _make_handler(session)
+        result = await handler.handle(self._valid_payload())
+        assert result["success"] is False
+        assert "not found" in result["error"]
+
+    async def test_deleted_project_returns_error(self) -> None:
+        session = _make_session()
+        project = MagicMock()
+        project.is_deleted = True
+        session.get.return_value = project
+        handler = _make_handler(session)
+        result = await handler.handle(self._valid_payload())
+        assert result["success"] is False
+
+    async def test_happy_path_creates_project_node(self) -> None:
+        session = _make_session()
+        project = MagicMock()
+        project.is_deleted = False
+        project.name = "Pilot Space"
+        project.description = "AI-augmented SDLC platform"
+        project.identifier = "PILOT"
+        project.icon = "rocket"
+        project.lead_id = uuid4()
+        session.get.return_value = project
+
+        write_result = MagicMock()
+        write_result.node_ids = [uuid4()]
+
+        with (
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.GraphWriteService"
+            ) as MockWrite,
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.KnowledgeGraphRepository"
+            ) as MockRepo,
+        ):
+            mock_write_svc = AsyncMock()
+            mock_write_svc.execute = AsyncMock(return_value=write_result)
+            MockWrite.return_value = mock_write_svc
+
+            mock_repo = AsyncMock()
+            mock_repo.hybrid_search = AsyncMock(return_value=[])
+            MockRepo.return_value = mock_repo
+
+            handler = _make_handler(session, _make_embedding_service([0.1] * 768))
+            result = await handler.handle(self._valid_payload())
+
+        assert result["success"] is True
+        assert len(result["node_ids"]) == 1
+        call_args = mock_write_svc.execute.call_args[0][0]
+        assert call_args.nodes[0].node_type == NodeType.PROJECT
+        assert "Pilot Space" in call_args.nodes[0].content
+        assert call_args.nodes[0].properties["identifier"] == "PILOT"
+
+
+class TestHandleCycle:
+    def _valid_payload(self) -> dict:
+        return {
+            "workspace_id": str(_WORKSPACE_ID),
+            "project_id": str(_PROJECT_ID),
+            "entity_type": "cycle",
+            "entity_id": str(_CYCLE_ID),
+        }
+
+    async def test_cycle_not_found_returns_error(self) -> None:
+        session = _make_session()
+        session.get.return_value = None
+        handler = _make_handler(session)
+        result = await handler.handle(self._valid_payload())
+        assert result["success"] is False
+        assert "not found" in result["error"]
+
+    async def test_deleted_cycle_returns_error(self) -> None:
+        session = _make_session()
+        cycle = MagicMock()
+        cycle.is_deleted = True
+        session.get.return_value = cycle
+        handler = _make_handler(session)
+        result = await handler.handle(self._valid_payload())
+        assert result["success"] is False
+
+    async def test_happy_path_creates_cycle_node(self) -> None:
+        from datetime import date
+
+        session = _make_session()
+        cycle = MagicMock()
+        cycle.is_deleted = False
+        cycle.name = "Sprint 1"
+        cycle.description = "First sprint of Q1"
+        cycle.status = MagicMock(value="active")
+        cycle.start_date = date(2026, 1, 6)
+        cycle.end_date = date(2026, 1, 20)
+        cycle.owned_by_id = uuid4()
+        session.get.return_value = cycle
+
+        write_result = MagicMock()
+        write_result.node_ids = [uuid4()]
+
+        with (
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.GraphWriteService"
+            ) as MockWrite,
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.KnowledgeGraphRepository"
+            ) as MockRepo,
+        ):
+            mock_write_svc = AsyncMock()
+            mock_write_svc.execute = AsyncMock(return_value=write_result)
+            MockWrite.return_value = mock_write_svc
+
+            mock_repo = AsyncMock()
+            mock_repo.hybrid_search = AsyncMock(return_value=[])
+            MockRepo.return_value = mock_repo
+
+            handler = _make_handler(session, _make_embedding_service([0.1] * 768))
+            result = await handler.handle(self._valid_payload())
+
+        assert result["success"] is True
+        assert len(result["node_ids"]) == 1
+        call_args = mock_write_svc.execute.call_args[0][0]
+        assert call_args.nodes[0].node_type == NodeType.CYCLE
+        assert "Sprint 1" in call_args.nodes[0].content
+        assert call_args.nodes[0].properties["status"] == "active"
+
+    async def test_cycle_without_dates(self) -> None:
+        session = _make_session()
+        cycle = MagicMock()
+        cycle.is_deleted = False
+        cycle.name = "Backlog Cycle"
+        cycle.description = None
+        cycle.status = MagicMock(value="draft")
+        cycle.start_date = None
+        cycle.end_date = None
+        cycle.owned_by_id = None
+        session.get.return_value = cycle
+
+        write_result = MagicMock()
+        write_result.node_ids = [uuid4()]
+
+        with (
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.GraphWriteService"
+            ) as MockWrite,
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.KnowledgeGraphRepository"
+            ) as MockRepo,
+        ):
+            mock_write_svc = AsyncMock()
+            mock_write_svc.execute = AsyncMock(return_value=write_result)
+            MockWrite.return_value = mock_write_svc
+
+            mock_repo = AsyncMock()
+            mock_repo.hybrid_search = AsyncMock(return_value=[])
+            MockRepo.return_value = mock_repo
+
+            handler = _make_handler(session, _make_embedding_service([0.1] * 768))
+            result = await handler.handle(self._valid_payload())
+
+        assert result["success"] is True
+        call_args = mock_write_svc.execute.call_args[0][0]
+        assert call_args.nodes[0].properties["start_date"] == ""
+        assert call_args.nodes[0].properties["end_date"] == ""
+
+
+class TestTransactionOwnership:
+    """Handler must not commit — the worker owns the single commit."""
+
+    async def test_handler_does_not_commit_on_note(self) -> None:
+        session = _make_session()
+        note = MagicMock()
+        note.title = "Test"
+        note.content = {
+            "type": "doc",
+            "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Hello"}]}],
+        }
+        mock_note_result = MagicMock()
+        mock_note_result.scalar_one_or_none.return_value = note
+        # First: advisory lock, second: note query, third: stale chunk delete
+        session.execute = AsyncMock(side_effect=[MagicMock(), mock_note_result, MagicMock()])
+
+        write_result = MagicMock()
+        write_result.node_ids = [uuid4()]
+
+        with (
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.GraphWriteService"
+            ) as MockWrite,
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.KnowledgeGraphRepository"
+            ) as MockRepo,
+        ):
+            mock_write_svc = AsyncMock()
+            mock_write_svc.execute = AsyncMock(return_value=write_result)
+            MockWrite.return_value = mock_write_svc
+
+            mock_repo = AsyncMock()
+            mock_repo.hybrid_search = AsyncMock(return_value=[])
+            MockRepo.return_value = mock_repo
+
+            handler = _make_handler(session, _make_embedding_service())
+            result = await handler.handle(
+                {
+                    "workspace_id": str(_WORKSPACE_ID),
+                    "project_id": str(_PROJECT_ID),
+                    "entity_type": "note",
+                    "entity_id": str(_NOTE_ID),
+                }
+            )
+
+        assert result["success"] is True
+        session.commit.assert_not_called()
+
+    async def test_handler_does_not_commit_on_issue(self) -> None:
+        session = _make_session()
+        issue = MagicMock()
+        issue.is_deleted = False
+        issue.name = "Test"
+        issue.description = "Desc"
+        issue.identifier = "PS-1"
+        issue.state_id = None
+        session.get.return_value = issue
+
+        write_result = MagicMock()
+        write_result.node_ids = [uuid4()]
+
+        with (
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.GraphWriteService"
+            ) as MockWrite,
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.KnowledgeGraphRepository"
+            ) as MockRepo,
+        ):
+            mock_write_svc = AsyncMock()
+            mock_write_svc.execute = AsyncMock(return_value=write_result)
+            MockWrite.return_value = mock_write_svc
+
+            mock_repo = AsyncMock()
+            mock_repo.hybrid_search = AsyncMock(return_value=[])
+            MockRepo.return_value = mock_repo
+
+            handler = _make_handler(session, _make_embedding_service([0.1] * 768))
+            result = await handler.handle(
+                {
+                    "workspace_id": str(_WORKSPACE_ID),
+                    "project_id": str(_PROJECT_ID),
+                    "entity_type": "issue",
+                    "entity_id": str(_ISSUE_ID),
+                }
+            )
+
+        assert result["success"] is True
+        session.commit.assert_not_called()
+
+    async def test_write_service_created_with_auto_commit_false(self) -> None:
+        session = _make_session()
+        issue = MagicMock()
+        issue.is_deleted = False
+        issue.name = "Test"
+        issue.description = "Desc"
+        issue.identifier = "PS-1"
+        issue.state_id = None
+        session.get.return_value = issue
+
+        write_result = MagicMock()
+        write_result.node_ids = [uuid4()]
+
+        with (
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.GraphWriteService"
+            ) as MockWrite,
+            patch(
+                "pilot_space.infrastructure.queue.handlers.kg_populate_handler.KnowledgeGraphRepository"
+            ) as MockRepo,
+        ):
+            mock_write_svc = AsyncMock()
+            mock_write_svc.execute = AsyncMock(return_value=write_result)
+            MockWrite.return_value = mock_write_svc
+
+            mock_repo = AsyncMock()
+            mock_repo.hybrid_search = AsyncMock(return_value=[])
+            MockRepo.return_value = mock_repo
+
+            handler = _make_handler(session, _make_embedding_service([0.1] * 768))
+            await handler.handle(
+                {
+                    "workspace_id": str(_WORKSPACE_ID),
+                    "project_id": str(_PROJECT_ID),
+                    "entity_type": "issue",
+                    "entity_id": str(_ISSUE_ID),
+                }
+            )
+
+        # Verify auto_commit=False was passed
+        _, kwargs = MockWrite.call_args
+        assert kwargs.get("auto_commit") is False
+
+
+class TestInfrastructureErrorPropagation:
+    """Infrastructure errors must propagate as exceptions (H-1)."""
+
+    async def test_db_error_propagates_from_issue_handler(self) -> None:
+        session = _make_session()
+        session.get.side_effect = RuntimeError("DB connection lost")
+
+        handler = _make_handler(session)
+        with pytest.raises(RuntimeError, match="DB connection lost"):
+            await handler.handle(
+                {
+                    "workspace_id": str(_WORKSPACE_ID),
+                    "project_id": str(_PROJECT_ID),
+                    "entity_type": "issue",
+                    "entity_id": str(_ISSUE_ID),
+                }
+            )
+
+    async def test_db_error_propagates_from_note_handler(self) -> None:
+        session = _make_session()
+        session.execute.side_effect = RuntimeError("DB connection lost")
+
+        handler = _make_handler(session)
+        with pytest.raises(RuntimeError, match="DB connection lost"):
+            await handler.handle(
+                {
+                    "workspace_id": str(_WORKSPACE_ID),
+                    "project_id": str(_PROJECT_ID),
+                    "entity_type": "note",
+                    "entity_id": str(_NOTE_ID),
+                }
+            )
 
 
 class TestConstant:

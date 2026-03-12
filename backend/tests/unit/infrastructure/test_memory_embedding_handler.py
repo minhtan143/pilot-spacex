@@ -132,7 +132,8 @@ class TestHandleGraphNodeHappyPath:
         # execute called twice: SELECT then UPDATE
         assert session.execute.await_count == 2
 
-    async def test_returns_error_when_embedding_fails(self) -> None:
+    async def test_raises_when_embedding_fails(self) -> None:
+        """Transient embedding failure raises RuntimeError for worker retry (H-1)."""
         session = _make_session()
         mock_result = MagicMock()
         mock_result.first.return_value = ("Node content text.",)
@@ -141,12 +142,10 @@ class TestHandleGraphNodeHappyPath:
         embedding_svc = _make_embedding_service(embed_return=None)
         handler = _make_handler(session, embedding_service=embedding_svc)
 
-        result = await handler.handle_graph_node(
-            {"node_id": str(_NODE_ID), "workspace_id": str(_WORKSPACE_ID)}
-        )
-
-        assert result["success"] is False
-        assert "all embedding providers failed" in result["error"]
+        with pytest.raises(RuntimeError, match="all embedding providers failed"):
+            await handler.handle_graph_node(
+                {"node_id": str(_NODE_ID), "workspace_id": str(_WORKSPACE_ID)}
+            )
         session.commit.assert_not_called()
 
     async def test_embedding_service_called_with_node_content(self) -> None:

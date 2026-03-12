@@ -6,6 +6,7 @@ Not part of the public API — import from knowledge_graph_repository instead.
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -138,15 +139,18 @@ async def enrich_edge_density(
     """Add edge_density_score to each ScoredNode.
 
     Counts both outgoing and incoming edges in a single UNION ALL query so
-    target-only nodes are not penalised. Normalises by max_degree within the
-    result set. workspace_id filters edges to the owning workspace only.
+    target-only nodes are not penalised. Uses stable log-based normalization
+    (``log1p(degree) / log1p(100)``) so the same node always gets the same
+    score regardless of other nodes in the result set.
+    workspace_id filters edges to the owning workspace only.
     """
     if not scored:
         return scored
 
     node_ids = [sn.node.id for sn in scored]
     degree_map = await compute_degree_map(session, node_ids, workspace_id)
-    max_degree = max(degree_map.values(), default=1)
+    # Stable normalization: degree 0→0.0, 10→~0.52, 100→1.0
+    log_100 = math.log1p(100)
     return [
         ScoredNode(
             node=sn.node,
@@ -154,7 +158,7 @@ async def enrich_edge_density(
             embedding_score=sn.embedding_score,
             text_score=sn.text_score,
             recency_score=sn.recency_score,
-            edge_density_score=degree_map.get(sn.node.id, 0) / (max_degree + 1),
+            edge_density_score=min(1.0, math.log1p(degree_map.get(sn.node.id, 0)) / log_100),
         )
         for sn in scored
     ]

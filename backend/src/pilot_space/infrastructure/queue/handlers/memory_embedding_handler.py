@@ -172,10 +172,8 @@ class MemoryEmbeddingJobHandler:
 
         embedding = await self._embedding.embed(content)
         if embedding is None:
-            return {
-                "success": False,
-                "error": "all embedding providers failed (OpenAI + Ollama)",
-            }
+            # Transient infra failure — raise so the worker retries / dead-letters
+            raise RuntimeError("all embedding providers failed (OpenAI + Ollama)")
 
         # Store embedding back to graph_nodes — worker owns the commit
         await self._store_graph_node_embedding(node_id, serialize_embedding(embedding))

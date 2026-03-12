@@ -406,3 +406,147 @@ class TestGraphWriteServiceReturnValues:
         result = await service.execute(payload)
 
         assert result.node_ids == [n.id for n in nodes]
+
+
+class TestGraphWriteServiceAutoCommit:
+    """Verify auto_commit controls session commit/flush behavior."""
+
+    @pytest.mark.asyncio
+    async def test_auto_commit_false_flushes_but_does_not_commit(
+        self,
+        mock_repo: AsyncMock,
+        mock_queue: AsyncMock,
+        mock_session: AsyncMock,
+        workspace_id: UUID,
+    ) -> None:
+        """With auto_commit=False, session.flush is called but commit is not."""
+        service = GraphWriteService(
+            knowledge_graph_repository=mock_repo,
+            queue=mock_queue,
+            session=mock_session,
+            auto_commit=False,
+        )
+        node = _make_persisted_node(workspace_id)
+        mock_repo.bulk_upsert_nodes.return_value = [node]
+
+        payload = GraphWritePayload(
+            workspace_id=workspace_id,
+            nodes=[NodeInput(node_type=NodeType.ISSUE, label="PS-1", content="x")],
+        )
+        await service.execute(payload)
+
+        mock_session.flush.assert_awaited()
+        mock_session.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_auto_commit_true_commits(
+        self,
+        service: GraphWriteService,
+        mock_repo: AsyncMock,
+        mock_session: AsyncMock,
+        workspace_id: UUID,
+    ) -> None:
+        """Default auto_commit=True calls session.commit."""
+        node = _make_persisted_node(workspace_id)
+        mock_repo.bulk_upsert_nodes.return_value = [node]
+
+        payload = GraphWritePayload(
+            workspace_id=workspace_id,
+            nodes=[NodeInput(node_type=NodeType.ISSUE, label="PS-1", content="x")],
+        )
+        await service.execute(payload)
+
+        mock_session.commit.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_embedding_enqueued_before_commit(
+        self,
+        mock_repo: AsyncMock,
+        mock_queue: AsyncMock,
+        workspace_id: UUID,
+    ) -> None:
+        """Embedding jobs are enqueued before commit (C-2 fix)."""
+        call_order: list[str] = []
+        session = AsyncMock()
+        session.flush = AsyncMock(side_effect=lambda: call_order.append("flush"))
+        session.commit = AsyncMock(side_effect=lambda: call_order.append("commit"))
+
+        mock_queue.enqueue = AsyncMock(side_effect=lambda *_args: call_order.append("enqueue"))
+
+        service = GraphWriteService(
+            knowledge_graph_repository=mock_repo,
+            queue=mock_queue,
+            session=session,
+            auto_commit=True,
+        )
+        node = _make_persisted_node(workspace_id)
+        mock_repo.bulk_upsert_nodes.return_value = [node]
+
+        payload = GraphWritePayload(
+            workspace_id=workspace_id,
+            nodes=[NodeInput(node_type=NodeType.ISSUE, label="PS-1", content="x")],
+        )
+        await service.execute(payload)
+
+        flush_idx = call_order.index("flush")
+        enqueue_idx = call_order.index("enqueue")
+        commit_idx = call_order.index("commit")
+        assert flush_idx < enqueue_idx < commit_idx
+
+
+class TestGraphWriteServiceCrossBatchEdgeResolution:
+    """Verify cross-batch external_id DB lookup (H-3 fix)."""
+
+    @pytest.mark.asyncio
+    async def test_edge_resolved_via_db_when_not_in_batch(
+        self,
+        mock_repo: AsyncMock,
+        mock_queue: AsyncMock,
+        mock_session: AsyncMock,
+        workspace_id: UUID,
+    ) -> None:
+        """External ID not in current batch is resolved via DB query."""
+        from unittest.mock import MagicMock
+
+        node_a = _make_persisted_node(workspace_id, label="A")
+        mock_repo.bulk_upsert_nodes.return_value = [node_a]
+
+        # The target external_id exists in DB but not in this batch
+        target_ext_id = uuid4()
+        target_node_id = uuid4()
+
+        # session.execute returns the DB lookup result
+        mock_db_result = MagicMock()
+        mock_db_result.scalar_one_or_none.return_value = target_node_id
+        mock_session.execute = AsyncMock(return_value=mock_db_result)
+
+        captured_edges: list[GraphEdge] = []
+
+        async def capture(edge: GraphEdge) -> GraphEdge:
+            captured_edges.append(edge)
+            return edge
+
+        mock_repo.upsert_edge.side_effect = capture
+
+        service = GraphWriteService(
+            knowledge_graph_repository=mock_repo,
+            queue=mock_queue,
+            session=mock_session,
+        )
+        payload = GraphWritePayload(
+            workspace_id=workspace_id,
+            nodes=[NodeInput(node_type=NodeType.ISSUE, label="A", content="a")],
+            edges=[
+                EdgeInput(
+                    source_external_id=None,
+                    target_external_id=target_ext_id,
+                    source_node_id=node_a.id,
+                    edge_type=EdgeType.RELATES_TO,
+                )
+            ],
+        )
+        result = await service.execute(payload)
+
+        relates_edges = [e for e in captured_edges if e.edge_type == EdgeType.RELATES_TO]
+        assert len(relates_edges) >= 1
+        assert relates_edges[0].target_id == target_node_id

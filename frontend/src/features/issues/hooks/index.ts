@@ -58,6 +58,10 @@ export { useIssueRelations, issueRelationsKeys } from './use-issue-relations';
 // Knowledge graph data for an issue
 export { useIssueKnowledgeGraph, issueKnowledgeGraphKeys } from './use-issue-knowledge-graph';
 
+// Shared property mutation handlers for PropertyBlockView / PropertyBlockCollapsed
+export { usePropertyMutations } from './use-property-mutations';
+export type { UsePropertyMutationsOptions } from './use-property-mutations';
+
 // Related Issues: suggestions, dismiss, create/delete relation (Phase 15)
 export { useRelatedSuggestions, relatedSuggestionsKeys } from './use-related-suggestions';
 export { useDismissSuggestion } from './use-dismiss-suggestion';

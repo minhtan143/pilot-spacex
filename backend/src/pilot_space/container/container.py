@@ -216,6 +216,7 @@ class Container(SkillContainer, PluginContainer):
         issue_repository=InfraContainer.issue_repository,
         activity_repository=InfraContainer.activity_repository,
         label_repository=InfraContainer.label_repository,
+        queue=InfraContainer.queue_client,
         audit_log_repository=audit_log_repository,
     )
 
@@ -326,6 +327,7 @@ class Container(SkillContainer, PluginContainer):
         CreateCycleService,
         session=providers.Callable(get_current_session),
         cycle_repository=InfraContainer.cycle_repository,
+        queue=InfraContainer.queue_client,
         audit_log_repository=audit_log_repository,
     )
 
@@ -333,6 +335,7 @@ class Container(SkillContainer, PluginContainer):
         UpdateCycleService,
         session=providers.Callable(get_current_session),
         cycle_repository=InfraContainer.cycle_repository,
+        queue=InfraContainer.queue_client,
         audit_log_repository=audit_log_repository,
     )
 
