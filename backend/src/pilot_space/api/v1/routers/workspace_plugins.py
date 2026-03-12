@@ -30,6 +30,7 @@ from pilot_space.infrastructure.database.models.workspace_member import (
     WorkspaceMember,
     WorkspaceRole,
 )
+from pilot_space.infrastructure.database.rls import set_rls_context
 from pilot_space.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
@@ -47,12 +48,13 @@ async def _require_admin(user_id: UUID, workspace_id: UUID, session: DbSession) 
     stmt = select(WorkspaceMember.role).where(
         WorkspaceMember.workspace_id == workspace_id,
         WorkspaceMember.user_id == user_id,
+        WorkspaceMember.is_deleted == False,  # noqa: E712
     )
     result = await session.execute(stmt)
     row = result.scalar()
     if row is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member")
-    role = row.value if hasattr(row, "value") else str(row)
+    role = row.value if hasattr(row, "value") else str(row).upper()
     if role not in (WorkspaceRole.ADMIN.value, WorkspaceRole.OWNER.value):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
 
@@ -109,6 +111,7 @@ async def list_installed_plugins(
     workspace_id: WorkspaceId, session: DbSession, current_user_id: CurrentUserId
 ) -> list[WorkspacePluginResponse]:
     """Return all installed (non-deleted) plugins for this workspace."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.infrastructure.database.repositories.workspace_plugin_repository import (
@@ -132,6 +135,7 @@ async def browse_repo(
     repo_url: str = Query(description="GitHub repository URL to browse"),
 ) -> list[SkillListItem]:
     """Fetch available skills from a GitHub repository URL."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.integrations.github.plugin_service import (
@@ -191,6 +195,7 @@ async def install_plugin(
     current_user_id: CurrentUserId,
 ) -> WorkspacePluginResponse:
     """Install one skill from a GitHub repository into this workspace."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.application.services.workspace_plugin.install_plugin_service import (
@@ -243,6 +248,7 @@ async def install_all_from_repo(
     current_user_id: CurrentUserId,
 ) -> list[WorkspacePluginResponse]:
     """Browse a GitHub repo and install all discovered skills at once."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.application.services.workspace_plugin.install_plugin_service import (
@@ -262,7 +268,7 @@ async def install_all_from_repo(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
 
-    token = request.pat or await _get_workspace_token(workspace_id, session)
+    token = await _get_workspace_token(workspace_id, session)
     gh = GitHubPluginService(token=token)
     skill_names: list[str] = []
     head_sha = ""
@@ -336,6 +342,7 @@ async def toggle_plugin(
     current_user_id: CurrentUserId,
 ) -> WorkspacePluginResponse:
     """Activate or deactivate a single plugin skill."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.infrastructure.database.repositories.workspace_plugin_repository import (
@@ -367,6 +374,7 @@ async def toggle_repo_plugins(
     current_user_id: CurrentUserId,
 ) -> list[WorkspacePluginResponse]:
     """Activate or deactivate all plugin skills from a specific repository."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.infrastructure.database.repositories.workspace_plugin_repository import (
@@ -412,6 +420,7 @@ async def uninstall_repo_plugins(
     repo_url: str = Query(description="GitHub repository URL to uninstall"),
 ) -> None:
     """Soft-delete all installed plugins from a specific repository."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.application.services.workspace_plugin.install_plugin_service import (
@@ -461,6 +470,7 @@ async def uninstall_plugin(
     current_user_id: CurrentUserId,
 ) -> None:
     """Soft-delete an installed plugin."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.application.services.workspace_plugin.install_plugin_service import (
@@ -492,6 +502,7 @@ async def check_updates(
     redis: RedisDep,
 ) -> WorkspacePluginUpdateCheckResponse:
     """Check if installed plugins have newer versions available."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.infrastructure.database.repositories.workspace_plugin_repository import (
@@ -542,6 +553,7 @@ async def save_github_credential(
     current_user_id: CurrentUserId,
 ) -> WorkspaceGithubCredentialResponse:
     """Encrypt and store a GitHub PAT for this workspace."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.infrastructure.database.repositories.workspace_github_credential_repository import (
@@ -569,6 +581,7 @@ async def get_github_credential(
     current_user_id: CurrentUserId,
 ) -> WorkspaceGithubCredentialResponse:
     """Check if a GitHub PAT is configured for this workspace."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.infrastructure.database.repositories.workspace_github_credential_repository import (

@@ -31,6 +31,7 @@ from pilot_space.dependencies import CurrentUserId, DbSession
 from pilot_space.infrastructure.database.repositories.user_skill_repository import (
     UserSkillRepository,
 )
+from pilot_space.infrastructure.database.rls import set_rls_context
 from pilot_space.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
@@ -79,6 +80,7 @@ async def list_user_skills(
     Returns:
         List of UserSkillSchema for the current user.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
     repo = UserSkillRepository(session)
     skills = await repo.get_by_user_workspace(current_user_id, workspace_id)
     return [_to_schema(s) for s in skills]
@@ -117,6 +119,7 @@ async def create_user_skill(
     Raises:
         HTTPException: 400/409 on validation errors.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
     svc = CreateUserSkillService(session)
     try:
         skill = await svc.create(
@@ -178,10 +181,11 @@ async def update_user_skill(
     Raises:
         HTTPException: 404 if not found, 403 if not owner.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
     repo = UserSkillRepository(session)
     skill = await repo.get_by_id(skill_id)
 
-    if skill is None or skill.is_deleted:
+    if skill is None or skill.is_deleted or skill.workspace_id != workspace_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User skill not found",
@@ -234,10 +238,11 @@ async def delete_user_skill(
     Raises:
         HTTPException: 404 if not found, 403 if not owner.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
     repo = UserSkillRepository(session)
     skill = await repo.get_by_id(skill_id)
 
-    if skill is None or skill.is_deleted:
+    if skill is None or skill.is_deleted or skill.workspace_id != workspace_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User skill not found",

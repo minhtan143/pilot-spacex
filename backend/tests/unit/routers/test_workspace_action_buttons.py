@@ -94,9 +94,19 @@ async def admin_client() -> AsyncGenerator[AsyncClient, None]:
     token_payload = _make_token_payload()
     app.dependency_overrides[get_current_user] = lambda: token_payload
 
-    with patch(
-        "pilot_space.api.v1.routers.workspace_action_buttons._require_admin",
-        new=AsyncMock(),
+    with (
+        patch(
+            "pilot_space.api.v1.routers.workspace_action_buttons._require_admin",
+            new=AsyncMock(),
+        ),
+        patch(
+            "pilot_space.api.v1.routers.workspace_action_buttons._require_member",
+            new=AsyncMock(),
+        ),
+        patch(
+            "pilot_space.api.v1.routers.workspace_action_buttons.set_rls_context",
+            new=AsyncMock(),
+        ),
     ):
         transport = ASGITransport(app=app)
         async with AsyncClient(
@@ -123,9 +133,15 @@ async def non_admin_client() -> AsyncGenerator[AsyncClient, None]:
     async def _reject_admin(*args: object, **kwargs: object) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
 
-    with patch(
-        "pilot_space.api.v1.routers.workspace_action_buttons._require_admin",
-        new=_reject_admin,
+    with (
+        patch(
+            "pilot_space.api.v1.routers.workspace_action_buttons._require_admin",
+            new=_reject_admin,
+        ),
+        patch(
+            "pilot_space.api.v1.routers.workspace_action_buttons.set_rls_context",
+            new=AsyncMock(),
+        ),
     ):
         transport = ASGITransport(app=app)
         async with AsyncClient(
@@ -266,12 +282,14 @@ class TestReorderButtons:
         """PUT reorder returns 204."""
         ids = [uuid4(), uuid4(), uuid4()]
         buttons = [_make_button(button_id=str(bid)) for bid in ids]
+        # Map button.id to button for the dict lookup in reorder
+        for btn, bid in zip(buttons, ids, strict=True):
+            btn.id = bid
         with patch(
             "pilot_space.api.v1.routers.workspace_action_buttons.SkillActionButtonRepository",
         ) as MockRepo:
             mock_instance = MockRepo.return_value
-            mock_instance.get_by_workspace_and_id = AsyncMock(side_effect=buttons)
-            mock_instance.update = AsyncMock(side_effect=buttons)
+            mock_instance.get_all_by_workspace = AsyncMock(return_value=buttons)
             resp = await admin_client.put(
                 f"{BASE_URL}/reorder",
                 json={"button_ids": [str(bid) for bid in ids]},

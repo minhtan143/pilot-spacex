@@ -388,6 +388,7 @@ async def rotate_encryption_key(
         counts = await rotate_workspace_key(
             session, str(workspace_id), body.new_key, batch_size=100
         )
+        await session.commit()
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

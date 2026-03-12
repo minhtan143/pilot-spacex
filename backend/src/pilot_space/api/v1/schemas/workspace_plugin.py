@@ -96,13 +96,11 @@ class WorkspacePluginInstallAllRequest(BaseModel):
 
     Attributes:
         repo_url: Full GitHub repository URL.
-        pat: Optional GitHub PAT for private repos (used for this request only).
     """
 
     model_config = ConfigDict(strict=True)
 
     repo_url: str
-    pat: str | None = None
 
 
 class WorkspacePluginToggleRequest(BaseModel):

@@ -39,9 +39,17 @@ def _create_test_app():
 
 
 def _mock_admin_check():
-    """Patch _require_admin to always pass."""
+    """Patch _require_admin and set_rls_context to always pass."""
     return patch(
         "pilot_space.api.v1.routers.workspace_plugins._require_admin",
+        new_callable=AsyncMock,
+    )
+
+
+def _mock_rls_context():
+    """Patch set_rls_context to no-op in tests."""
+    return patch(
+        "pilot_space.api.v1.routers.workspace_plugins.set_rls_context",
         new_callable=AsyncMock,
     )
 
@@ -61,6 +69,7 @@ async def test_browse_repo_returns_skill_list() -> None:
 
     with (
         _mock_admin_check(),
+        _mock_rls_context(),
         _mock_workspace_token(),
         patch(
             "pilot_space.integrations.github.plugin_service.GitHubPluginService",
@@ -103,6 +112,7 @@ async def test_browse_repo_raises_on_github_unreachable() -> None:
 
     with (
         _mock_admin_check(),
+        _mock_rls_context(),
         _mock_workspace_token(),
         patch(
             "pilot_space.integrations.github.plugin_service.GitHubPluginService",
@@ -144,6 +154,7 @@ async def test_list_installed_plugins() -> None:
 
     with (
         _mock_admin_check(),
+        _mock_rls_context(),
         patch(
             "pilot_space.infrastructure.database.repositories.workspace_plugin_repository.WorkspacePluginRepository"
         ) as MockRepo,
@@ -190,6 +201,7 @@ async def test_update_check_returns_has_update_true_when_sha_differs() -> None:
 
     with (
         _mock_admin_check(),
+        _mock_rls_context(),
         _mock_workspace_token(),
         patch(
             "pilot_space.infrastructure.database.repositories.workspace_plugin_repository.WorkspacePluginRepository"
@@ -243,6 +255,7 @@ async def test_update_check_caches_result_five_minutes() -> None:
 
     with (
         _mock_admin_check(),
+        _mock_rls_context(),
         _mock_workspace_token(),
         patch(
             "pilot_space.infrastructure.database.repositories.workspace_plugin_repository.WorkspacePluginRepository"

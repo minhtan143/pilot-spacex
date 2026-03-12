@@ -31,6 +31,7 @@ from pilot_space.infrastructure.database.models.workspace_member import (
 from pilot_space.infrastructure.database.repositories.skill_action_button_repository import (
     SkillActionButtonRepository,
 )
+from pilot_space.infrastructure.database.rls import set_rls_context
 from pilot_space.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,17 +42,30 @@ router = APIRouter(
 )
 
 
+async def _require_member(user_id: UUID, workspace_id: UUID, session: DbSession) -> None:
+    """Verify user is an active member of the workspace. Raises 403 if not."""
+    stmt = select(WorkspaceMember.id).where(
+        WorkspaceMember.workspace_id == workspace_id,
+        WorkspaceMember.user_id == user_id,
+        WorkspaceMember.is_deleted == False,  # noqa: E712
+    )
+    result = await session.execute(stmt)
+    if result.scalar() is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member")
+
+
 async def _require_admin(user_id: UUID, workspace_id: UUID, session: DbSession) -> None:
     """Verify user is ADMIN or OWNER. Raises 403 if not."""
     stmt = select(WorkspaceMember.role).where(
         WorkspaceMember.workspace_id == workspace_id,
         WorkspaceMember.user_id == user_id,
+        WorkspaceMember.is_deleted == False,  # noqa: E712
     )
     result = await session.execute(stmt)
     row = result.scalar()
     if row is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member")
-    role = row.value if hasattr(row, "value") else str(row)
+    role = row.value if hasattr(row, "value") else str(row).upper()
     if role not in (WorkspaceRole.ADMIN.value, WorkspaceRole.OWNER.value):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
 
@@ -72,6 +86,8 @@ async def list_active_buttons(
     current_user_id: CurrentUserId,
 ) -> list[SkillActionButtonResponse]:
     """Return active action buttons for all workspace members."""
+    await set_rls_context(session, current_user_id, workspace_id)
+    await _require_member(current_user_id, workspace_id, session)
     repo = SkillActionButtonRepository(session)
     buttons = await repo.get_active_by_workspace(workspace_id)
     return [SkillActionButtonResponse.model_validate(b) for b in buttons]
@@ -88,6 +104,7 @@ async def list_all_buttons(
     current_user_id: CurrentUserId,
 ) -> list[SkillActionButtonResponse]:
     """Return all action buttons including inactive (admin only)."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
     repo = SkillActionButtonRepository(session)
     buttons = await repo.get_all_by_workspace(workspace_id)
@@ -107,6 +124,7 @@ async def create_button(
     current_user_id: CurrentUserId,
 ) -> SkillActionButtonResponse:
     """Create a new action button (admin only)."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     button = SkillActionButton(
@@ -141,6 +159,7 @@ async def update_button(
     current_user_id: CurrentUserId,
 ) -> SkillActionButtonResponse:
     """Update an existing action button (admin only)."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     repo = SkillActionButtonRepository(session)
@@ -170,14 +189,17 @@ async def reorder_buttons(
     current_user_id: CurrentUserId,
 ) -> None:
     """Reorder action buttons by providing ordered list of IDs (admin only)."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     repo = SkillActionButtonRepository(session)
+    all_buttons = await repo.get_all_by_workspace(workspace_id)
+    buttons_by_id = {b.id: b for b in all_buttons}
     for idx, bid in enumerate(request.button_ids):
-        button = await repo.get_by_workspace_and_id(workspace_id, bid)
+        button = buttons_by_id.get(bid)
         if button is not None:
             button.sort_order = idx * 10
-            await repo.update(button)
+    await session.flush()
 
     logger.info(
         "[ActionButtons] Reordered %d buttons in workspace %s",
@@ -198,6 +220,7 @@ async def delete_button(
     current_user_id: CurrentUserId,
 ) -> None:
     """Soft-delete an action button (admin only)."""
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     repo = SkillActionButtonRepository(session)

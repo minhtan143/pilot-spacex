@@ -33,6 +33,7 @@ from pilot_space.infrastructure.database.models.workspace_member import (
 from pilot_space.infrastructure.database.repositories.skill_template_repository import (
     SkillTemplateRepository,
 )
+from pilot_space.infrastructure.database.rls import set_rls_context
 from pilot_space.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,6 +42,25 @@ router = APIRouter(
     prefix="/{workspace_id}/skill-templates",
     tags=["Skill Templates"],
 )
+
+
+async def _require_member(
+    user_id: UUID,
+    workspace_id: UUID,
+    session: DbSession,
+) -> None:
+    """Verify user is an active member of the workspace. Raises 403 if not."""
+    stmt = select(WorkspaceMember.id).where(
+        WorkspaceMember.workspace_id == workspace_id,
+        WorkspaceMember.user_id == user_id,
+        WorkspaceMember.is_deleted == False,  # noqa: E712
+    )
+    result = await session.execute(stmt)
+    if result.scalar() is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not a member of this workspace",
+        )
 
 
 async def _require_admin(
@@ -61,6 +81,7 @@ async def _require_admin(
     stmt = select(WorkspaceMember.role).where(
         WorkspaceMember.workspace_id == workspace_id,
         WorkspaceMember.user_id == user_id,
+        WorkspaceMember.is_deleted == False,  # noqa: E712
     )
     result = await session.execute(stmt)
     row = result.scalar()
@@ -71,7 +92,7 @@ async def _require_admin(
             detail="Not a member of this workspace",
         )
 
-    role = row.value if hasattr(row, "value") else str(row)
+    role = row.value if hasattr(row, "value") else str(row).upper()
 
     if role not in (WorkspaceRole.ADMIN.value, WorkspaceRole.OWNER.value):
         raise HTTPException(
@@ -102,6 +123,8 @@ async def list_skill_templates(
     Returns:
         List of SkillTemplateSchema ordered by sort_order.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
+    await _require_member(current_user_id, workspace_id, session)
     repo = SkillTemplateRepository(session)
     templates = await repo.get_by_workspace(workspace_id)
     return [SkillTemplateSchema.model_validate(t) for t in templates]
@@ -134,6 +157,7 @@ async def create_skill_template(
     Raises:
         HTTPException: 403 if not admin/owner.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     repo = SkillTemplateRepository(session)
@@ -195,6 +219,7 @@ async def update_skill_template(
         HTTPException: 403 if not admin or trying to edit built-in fields.
         HTTPException: 404 if template not found.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     repo = SkillTemplateRepository(session)
@@ -257,6 +282,7 @@ async def delete_skill_template(
         HTTPException: 403 if not admin/owner.
         HTTPException: 404 if template not found.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     repo = SkillTemplateRepository(session)

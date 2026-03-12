@@ -29,6 +29,7 @@ from pilot_space.infrastructure.database.models.workspace_member import (
     WorkspaceMember,
     WorkspaceRole,
 )
+from pilot_space.infrastructure.database.rls import set_rls_context
 from pilot_space.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
@@ -57,6 +58,7 @@ async def _require_admin(
     stmt = select(WorkspaceMember.role).where(
         WorkspaceMember.workspace_id == workspace_id,
         WorkspaceMember.user_id == user_id,
+        WorkspaceMember.is_deleted == False,  # noqa: E712
     )
     result = await session.execute(stmt)
     row = result.scalar()
@@ -67,7 +69,7 @@ async def _require_admin(
             detail="Not a member of this workspace",
         )
 
-    role = row.value if hasattr(row, "value") else str(row)
+    role = row.value if hasattr(row, "value") else str(row).upper()
 
     if role not in (WorkspaceRole.ADMIN.value, WorkspaceRole.OWNER.value):
         raise HTTPException(
@@ -106,6 +108,7 @@ async def create_workspace_skill(
     Raises:
         HTTPException: 403 if not admin/owner; 422 if invalid role_type.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.application.services.workspace_role_skill import (
@@ -165,6 +168,7 @@ async def list_workspace_skills(
     Raises:
         HTTPException: 403 if not admin/owner.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.application.services.workspace_role_skill import (
@@ -210,6 +214,7 @@ async def activate_workspace_skill(
     Raises:
         HTTPException: 403 if not admin/owner; 404 if skill not found; 422 on conflict.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.application.services.workspace_role_skill import (
@@ -270,6 +275,7 @@ async def delete_workspace_skill(
     Raises:
         HTTPException: 403 if not admin/owner; 404 if skill not found.
     """
+    await set_rls_context(session, current_user_id, workspace_id)
     await _require_admin(current_user_id, workspace_id, session)
 
     from pilot_space.application.services.workspace_role_skill import (

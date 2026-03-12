@@ -237,6 +237,7 @@ def _re_encrypt_string(value: str, old_key: str, new_key: str) -> str | None:
         plaintext = decrypt_content_with_fallback(value, new_key, old_key)
         return encrypt_content(plaintext, new_key)
     except InvalidToken:
+        logger.warning("Skipped re-encryption for undecryptable content (not encrypted or corrupt)")
         return None
 
 
@@ -322,7 +323,7 @@ async def rotate_workspace_key(
 
     # Clear previous key -- rotation complete
     await repo.clear_previous_key(workspace_id)
-    await session.commit()
+    await session.flush()
 
     logger.info(
         "Key rotation complete for workspace %s: %d notes, %d issues re-encrypted",

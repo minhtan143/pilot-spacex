@@ -8,6 +8,7 @@ AI settings: see workspace_ai_settings.py
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 from uuid import UUID
 
@@ -39,6 +40,9 @@ from pilot_space.infrastructure.database import get_db_session
 from pilot_space.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Strong references to fire-and-forget tasks to prevent GC from collecting them
+_background_tasks: set[asyncio.Task[None]] = set()
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -144,9 +148,9 @@ async def create_workspace(
     workspace = result.workspace
 
     # SKRG-05: Seed default plugins into the new workspace (non-blocking fire-and-forget)
-    import asyncio
-
-    asyncio.create_task(_seed_workspace_background(workspace.id))  # noqa: RUF006
+    task = asyncio.create_task(_seed_workspace_background(workspace.id))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     return WorkspaceDetailResponse(
         id=workspace.id,

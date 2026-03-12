@@ -102,16 +102,20 @@ async def auth_client() -> AsyncGenerator[AsyncClient, None]:
     token_payload = _make_token_payload()
     app.dependency_overrides[get_current_user] = lambda: token_payload
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport,
-        base_url="http://test",
-        headers={
-            "Authorization": "Bearer test-token",
-            "X-Workspace-ID": str(WORKSPACE_ID),
-        },
-    ) as client:
-        yield client
+    with patch(
+        "pilot_space.api.v1.routers.user_skills.set_rls_context",
+        new=AsyncMock(),
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={
+                "Authorization": "Bearer test-token",
+                "X-Workspace-ID": str(WORKSPACE_ID),
+            },
+        ) as client:
+            yield client
 
     app.dependency_overrides.pop(get_current_user, None)
 
@@ -207,9 +211,7 @@ async def test_create_user_skill_400_template_not_found(auth_client: AsyncClient
         "pilot_space.api.v1.routers.user_skills.CreateUserSkillService",
     ) as mock_svc_cls:
         mock_svc = mock_svc_cls.return_value
-        mock_svc.create = AsyncMock(
-            side_effect=ValueError(f"Template not found: {TEMPLATE_ID}")
-        )
+        mock_svc.create = AsyncMock(side_effect=ValueError(f"Template not found: {TEMPLATE_ID}"))
 
         resp = await auth_client.post(
             BASE_URL,
