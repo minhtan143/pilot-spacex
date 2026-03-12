@@ -63,11 +63,11 @@ Plans:
 **Goal:** Fix session sharing race condition and add OAuth2 MCP authorization UI
 **Requirements:** SKRG-05 (session safety), MCP-03 (OAuth2 flow completion)
 **Gap Closure:** Closes 2 integration gaps + 1 flow gap from audit
+**Plans:** 2 plans
 
-Tasks:
-1. Fix SeedPluginsService fire-and-forget session sharing (workspaces.py:152) — use independent session
-2. Add OAuth2 "Authorize" button in MCP server management UI (mcp-server-form.tsx or server list)
-3. Wire OAuth2 authorization flow end-to-end (store -> API -> redirect -> callback)
+Plans:
+- [ ] 22-01-PLAN.md — Fix SeedPluginsService session race condition + OAuth callback redirect slug
+- [ ] 22-02-PLAN.md — Add OAuth2 Authorize button and callback status handling in frontend
 
 ### Phase 23: Tech Debt Sweep
 **Goal:** Close remaining tech debt items identified in v1.0-alpha audit
@@ -89,9 +89,9 @@ Tasks:
 |-------|-----------|-------|--------|-----------|
 | 1–11 | v1.0 | 46/46 | Complete | 2026-03-09 |
 | 12–20 | v1.0-alpha | 31/31 | Complete | 2026-03-12 |
-| 21–23 | v1.0-alpha (gap closure) | 0/? | Pending | — |
+| 21–23 | v1.0-alpha (gap closure) | 2/? | Pending | — |
 
-**Total: 23 phases, 77 plans, 69 requirements**
+**Total: 23 phases, 79 plans, 69 requirements**
 
 ---
 *v1.0 shipped: 2026-03-09 — 11 phases, 46 plans, 30/30 requirements*
