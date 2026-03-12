@@ -40,6 +40,10 @@ vi.mock('@/stores', () => ({
     getWorkspaceBySlug: () => mockWorkspace,
     fetchWorkspaces: vi.fn(),
     isLoading: false,
+    currentUserRole: 'owner' as const,
+    currentWorkspaceId: 'test-ws',
+    isOwner: true,
+    isAdmin: false,
   }),
   useNoteStore: () => ({
     pinnedNotes: [],
@@ -48,7 +52,25 @@ vi.mock('@/stores', () => ({
     isLoading: false,
     loadNotes: vi.fn(),
   }),
-  useNotificationStore: () => ({ unreadCount: 0, sortedNotifications: [], markAllAsRead: vi.fn() }),
+  useNotificationStore: () => ({
+    unreadCount: 0,
+    sortedNotifications: [],
+    notifications: [],
+    totalPages: 0,
+    currentPage: 1,
+    isLoading: false,
+    error: null,
+    markAllAsRead: vi.fn(),
+    markAsRead: vi.fn(),
+    markRead: vi.fn(),
+    markAllRead: vi.fn(),
+    removeNotification: vi.fn(),
+    clearAll: vi.fn(),
+    fetchNotifications: vi.fn(),
+    fetchUnreadCount: vi.fn(),
+    startPolling: vi.fn(),
+    stopPolling: vi.fn(),
+  }),
   useAuthStore: () => ({
     user: { id: 'u1', name: 'Test', email: 'test@test.com', avatarUrl: null },
     userDisplayName: 'Test',
@@ -85,6 +107,11 @@ vi.mock('@/hooks/useMediaQuery', () => ({
   useResponsive: () => ({ isSmallScreen: false }),
 }));
 
+// Mock approvals hook — sidebar calls usePendingApprovalCount for badge
+vi.mock('@/features/approvals/hooks/use-approvals', () => ({
+  usePendingApprovalCount: () => 0,
+}));
+
 function renderSidebar() {
   return render(
     <TooltipProvider>
@@ -111,7 +138,7 @@ describe('Sidebar Navigation', () => {
       expect(screen.getByTestId('nav-members')).toBeInTheDocument();
     });
 
-    it('renders AI section items (Chat, Roles, Costs)', () => {
+    it('renders AI section items (Chat, Skill, Costs)', () => {
       renderSidebar();
 
       expect(screen.getByTestId('nav-chat')).toBeInTheDocument();
@@ -152,22 +179,22 @@ describe('Sidebar Navigation', () => {
     });
   });
 
-  describe('Roles nav item', () => {
+  describe('Skill nav item', () => {
     it('links to /test-ws/roles', () => {
       renderSidebar();
 
       const rolesLink = screen.getByTestId('nav-roles');
-      expect(rolesLink).toHaveAttribute('href', '/test-ws/roles');
+      expect(rolesLink).toHaveAttribute('href', '/test-ws/skills');
     });
 
-    it('displays "Roles" label text', () => {
+    it('displays "Skill" label text', () => {
       renderSidebar();
 
-      expect(screen.getByText('Roles')).toBeInTheDocument();
+      expect(screen.getByText('Skill')).toBeInTheDocument();
     });
 
-    it('highlights Roles when pathname matches /test-ws/roles', () => {
-      mockPathname.mockReturnValue('/test-ws/roles');
+    it('highlights Skill when pathname matches /test-ws/skills', () => {
+      mockPathname.mockReturnValue('/test-ws/skills');
       renderSidebar();
 
       const rolesLink = screen.getByTestId('nav-roles');

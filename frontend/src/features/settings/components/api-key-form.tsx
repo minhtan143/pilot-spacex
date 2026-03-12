@@ -28,7 +28,7 @@ export const APIKeyForm = observer(function APIKeyForm() {
     openai?: string;
   }>({});
 
-  const validateKey = (provider: 'anthropic' | 'openai', key: string): string | undefined => {
+  const validateKey = (provider: string, key: string): string | undefined => {
     if (!key) return undefined; // Empty is valid (means no change)
 
     if (key.length < 10) {
@@ -121,7 +121,10 @@ export const APIKeyForm = observer(function APIKeyForm() {
             onChange={setAnthropicKey}
             isSet={settings.anthropicKeySet}
             required
-            error={validationErrors.anthropic}
+            error={
+              validationErrors.anthropic ??
+              (settings.validationErrors['anthropic'] as string | undefined)
+            }
             disabled={settings.isSaving}
             provider="anthropic"
             placeholder={settings.anthropicKeySet ? '••••••••••••••••••••' : 'sk-ant-...'}
@@ -135,7 +138,9 @@ export const APIKeyForm = observer(function APIKeyForm() {
             onChange={setOpenaiKey}
             isSet={settings.openaiKeySet}
             required
-            error={validationErrors.openai}
+            error={
+              validationErrors.openai ?? (settings.validationErrors['openai'] as string | undefined)
+            }
             disabled={settings.isSaving}
             provider="openai"
             placeholder={settings.openaiKeySet ? '••••••••••••••••••••' : 'sk-...'}

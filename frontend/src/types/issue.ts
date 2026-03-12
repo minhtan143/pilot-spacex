@@ -153,6 +153,8 @@ export interface IntegrationLink {
   authorAvatarUrl?: string | null;
   /** ISO timestamp of the commit. Only present when link_type === 'commit'. */
   commitTimestamp?: string;
+  /** CI check suite status from GitHub. Set by check_suite webhook events. */
+  ciStatus?: 'pending' | 'success' | 'failure' | 'neutral' | null;
 }
 
 // Note Issue Link (matches backend NoteIssueLinkBriefSchema)
@@ -180,6 +182,15 @@ export interface IssueRelation {
   linkType: 'blocks' | 'blocked_by' | 'duplicates' | 'related';
   direction: 'outbound' | 'inbound';
   relatedIssue: RelatedIssueBrief;
+}
+
+// AI-generated related issue suggestion (from GET /workspaces/{id}/issues/{id}/related-suggestions)
+export interface RelatedSuggestion {
+  id: string;
+  title: string;
+  identifier: string;
+  similarityScore: number;
+  reason: string;
 }
 
 export type { UserBrief, StateBrief, ProjectBrief, LabelBrief, User, IssuePriority };

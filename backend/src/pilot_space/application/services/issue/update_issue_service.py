@@ -27,6 +27,9 @@ if TYPE_CHECKING:
         IssueRepository,
         LabelRepository,
     )
+    from pilot_space.infrastructure.database.repositories.audit_log_repository import (
+        AuditLogRepository,
+    )
     from pilot_space.infrastructure.queue.supabase_queue import SupabaseQueueClient
 
 logger = get_logger(__name__)
@@ -101,6 +104,7 @@ class UpdateIssueService:
         activity_repository: ActivityRepository,
         label_repository: LabelRepository,
         queue: SupabaseQueueClient | None = None,
+        audit_log_repository: AuditLogRepository | None = None,
     ) -> None:
         """Initialize service.
 
@@ -110,12 +114,14 @@ class UpdateIssueService:
             activity_repository: Activity repository.
             label_repository: Label repository.
             queue: Optional queue client for KG population.
+            audit_log_repository: Optional audit log repository for compliance writes.
         """
         self._session = session
         self._issue_repo = issue_repository
         self._activity_repo = activity_repository
         self._label_repo = label_repository
         self._queue = queue
+        self._audit_repo = audit_log_repository
 
     async def execute(self, payload: UpdateIssuePayload) -> UpdateIssueResult:
         """Update an issue.
@@ -490,6 +496,24 @@ class UpdateIssueService:
                 )
             except Exception as exc:
                 logger.warning("UpdateIssueService: failed to enqueue kg_populate: %s", exc)
+
+        # Write audit log entry for update (non-fatal)
+        if self._audit_repo is not None and issue is not None and changed_fields:
+            try:
+                from pilot_space.infrastructure.database.models.audit_log import ActorType
+
+                await self._audit_repo.create(
+                    workspace_id=issue.workspace_id,
+                    actor_id=payload.actor_id,
+                    actor_type=ActorType.USER,
+                    action="issue.update",
+                    resource_type="issue",
+                    resource_id=issue.id,
+                    payload={"changed_fields": changed_fields},
+                    ip_address=None,
+                )
+            except Exception as exc:
+                logger.warning("UpdateIssueService: failed to write audit log: %s", exc)
 
         return UpdateIssueResult(
             issue=issue,  # type: ignore[arg-type]

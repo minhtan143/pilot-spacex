@@ -16,6 +16,8 @@ import { ConversationStore } from './ConversationStore';
 import { CostStore } from './CostStore';
 import { MarginAnnotationStore } from './MarginAnnotationStore';
 import { PilotSpaceStore } from './PilotSpaceStore';
+import { MCPServersStore } from './MCPServersStore';
+import { PluginsStore } from './PluginsStore';
 
 export class AIStore {
   ghostText: GhostTextStore;
@@ -27,6 +29,8 @@ export class AIStore {
   cost: CostStore;
   marginAnnotation: MarginAnnotationStore;
   pilotSpace: PilotSpaceStore;
+  mcpServers: MCPServersStore;
+  plugins: PluginsStore;
 
   isGloballyEnabled = true;
   globalError: string | null = null;
@@ -43,6 +47,8 @@ export class AIStore {
     this.cost = new CostStore(this);
     this.marginAnnotation = new MarginAnnotationStore(this);
     this.pilotSpace = new PilotSpaceStore(this);
+    this.mcpServers = new MCPServersStore();
+    this.plugins = new PluginsStore();
   }
 
   setGloballyEnabled(enabled: boolean): void {
@@ -83,6 +89,8 @@ export class AIStore {
     this.approval.reset();
     this.settings.reset();
     this.cost.reset();
+    this.mcpServers.reset();
+    this.plugins.reset();
     this.globalError = null;
   }
 }

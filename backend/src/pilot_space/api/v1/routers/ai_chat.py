@@ -19,11 +19,17 @@ from uuid import UUID
 import orjson
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import Field
 
 from pilot_space.ai.sdk.question_adapter import Question, get_question_adapter
 from pilot_space.ai.session.session_manager import AIMessage
-from pilot_space.api.v1.schemas.base import BaseSchema
+from pilot_space.api.v1.routers._chat_schemas import (
+    AbortRequest,
+    AbortResponse,
+    ChatRequest,
+    SkillListItem,
+    SkillListResponse,
+)
+from pilot_space.api.v1.routers.ai_chat_model_routing import resolve_model_override
 from pilot_space.dependencies import (
     CurrentUserId,
     DbSession,
@@ -37,37 +43,6 @@ from pilot_space.infrastructure.logging import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["ai-chat"])
-
-
-class ChatContext(BaseSchema):
-    """Context for AI chat request."""
-
-    workspace_id: UUID = Field(..., description="Workspace ID for context")
-    note_id: UUID | None = Field(None, description="Note ID if chatting within note")
-    issue_id: UUID | None = Field(None, description="Issue ID if chatting about issue")
-    project_id: UUID | None = Field(None, description="Project ID if chatting about project")
-    selected_text: str | None = Field(
-        None, max_length=10000, description="Selected text from editor"
-    )
-    selected_block_ids: list[str] = Field(
-        default_factory=list,
-        description="Block IDs selected in editor",
-    )
-    attachment_ids: list[UUID] = Field(
-        default_factory=list, description="Attachment IDs to include as file context", max_length=5
-    )
-
-
-class ChatRequest(BaseSchema):
-    """Request for AI chat interaction."""
-
-    message: str = Field(..., min_length=1, max_length=10000, description="User message")
-    session_id: str | None = Field(None, description="Session ID to resume conversation")
-    fork_session_id: str | None = Field(
-        None,
-        description="Session ID to fork from (creates a branch for what-if exploration)",
-    )
-    context: ChatContext | None = Field(None, description="Context for AI response")
 
 
 async def _recover_question_from_session(
@@ -146,6 +121,7 @@ async def _recover_question_from_session(
                 session_id=chat_request.session_id,
                 fork_session_id=chat_request.fork_session_id,
                 context=chat_request.context,
+                model_override=chat_request.model_override,
             )
 
     except Exception:
@@ -246,6 +222,7 @@ async def chat(
                     session_id=chat_request.session_id,
                     fork_session_id=chat_request.fork_session_id,
                     context=chat_request.context,
+                    model_override=chat_request.model_override,
                 )
 
                 # Persist question_data on last assistant message for session resume
@@ -411,10 +388,12 @@ async def chat(
         chat_request.session_id,
     )
 
-    # Direct SSE streaming
-    # session_id: tracking ID for all conversations (new or resumed)
-    # resume_session_id: only set when resuming an existing session (triggers
-    # --resume in Claude SDK CLI to restore conversation history)
+    # Resolve user-selected model override (AIPR-04)
+    resolved_model = (
+        await resolve_model_override(chat_request.model_override, ctx_workspace_id, session)
+        if chat_request.model_override and ctx_workspace_id is not None
+        else None
+    )
     agent_input = {
         "message": chat_request.message,
         "context": ai_context,
@@ -424,6 +403,7 @@ async def chat(
         ),
         "user_id": str(user_id),
         "workspace_id": str(ctx_workspace_id) if ctx_workspace_id else None,
+        "resolved_model": resolved_model,
         "attachment_content_blocks": attachment_content_blocks,
         "attachment_metadata": [
             {
@@ -527,19 +507,6 @@ async def chat(
     )
 
 
-class AbortRequest(BaseSchema):
-    """Request to abort an active chat session."""
-
-    session_id: str = Field(..., description="Session ID to abort")
-
-
-class AbortResponse(BaseSchema):
-    """Response from abort request."""
-
-    status: str = Field(..., description="'interrupted' or 'not_found'")
-    session_id: str = Field(..., description="Session ID that was targeted")
-
-
 @router.post("/chat/abort", response_model=AbortResponse)
 async def abort_chat(
     abort_request: AbortRequest,
@@ -583,21 +550,6 @@ async def abort_chat(
 # ============================================================================
 
 
-class SkillListItem(BaseSchema):
-    """Skill metadata for frontend display."""
-
-    name: str = Field(..., description="Skill identifier (e.g., 'extract-issues')")
-    description: str = Field(..., description="Brief description of skill purpose")
-    when_to_use: str = Field(default="", description="Usage guidance")
-
-
-class SkillListResponse(BaseSchema):
-    """List of available skills."""
-
-    skills: list[SkillListItem] = Field(default_factory=list, description="Available skills")
-    total: int = Field(..., ge=0, description="Total skill count")
-
-
 @router.get("/skills", response_model=SkillListResponse)
 async def list_skills(
     skill_registry: SkillRegistryDep,
@@ -622,20 +574,6 @@ async def list_skills(
         ],
         total=len(skills),
     )
-
-
-class AgentListItem(BaseSchema):
-    """Agent metadata for frontend display."""
-
-    name: str = Field(..., description="Agent identifier")
-    description: str = Field(default="", description="Agent description")
-
-
-class AgentListResponse(BaseSchema):
-    """List of registered agents."""
-
-    agents: list[AgentListItem] = Field(default_factory=list, description="Registered agents")
-    total: int = Field(..., ge=0, description="Total agent count")
 
 
 AGENT_DESCRIPTIONS: dict[str, str] = {
@@ -668,14 +606,7 @@ async def _execute_agent_stream(
     """Execute PilotSpaceAgent with streaming output.
 
     Bridges the FastAPI endpoint to PilotSpaceAgent.stream() method.
-
-    Args:
-        agent: PilotSpaceAgent instance.
-        input_data: Dict with message, context, session_id, user_id, workspace_id.
-        context: AI context dict (included for compatibility).
-
-    Yields:
-        SSE-formatted strings from PilotSpaceAgent.
+    Yields SSE-formatted strings from PilotSpaceAgent.
     """
     from pilot_space.ai.agents.agent_base import AgentContext
     from pilot_space.ai.agents.pilotspace_agent import ChatInput
@@ -687,6 +618,7 @@ async def _execute_agent_stream(
         context=input_data.get("context", {}),
         user_id=UUID(input_data["user_id"]) if input_data.get("user_id") else None,
         workspace_id=UUID(input_data["workspace_id"]) if input_data.get("workspace_id") else None,
+        resolved_model=input_data.get("resolved_model"),
     )
 
     ws_id = input_data.get("workspace_id")

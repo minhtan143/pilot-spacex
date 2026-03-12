@@ -39,7 +39,9 @@ from pilot_space.infrastructure.database.models.ai_message import AIMessage, Mes
 from pilot_space.infrastructure.database.models.ai_session import AISession
 from pilot_space.infrastructure.database.models.ai_task import AITask, TaskStatus
 from pilot_space.infrastructure.database.models.ai_tool_call import AIToolCall, ToolCallStatus
+from pilot_space.infrastructure.database.models.audit_log import ActorType, AuditLog
 from pilot_space.infrastructure.database.models.chat_attachment import ChatAttachment
+from pilot_space.infrastructure.database.models.custom_role import CustomRole
 from pilot_space.infrastructure.database.models.cycle import Cycle, CycleStatus
 from pilot_space.infrastructure.database.models.digest_dismissal import DigestDismissal
 from pilot_space.infrastructure.database.models.discussion_comment import (
@@ -80,15 +82,25 @@ from pilot_space.infrastructure.database.models.note_note_link import (
     NoteNoteLinkType,
 )
 from pilot_space.infrastructure.database.models.note_version import NoteVersion, VersionTrigger
+from pilot_space.infrastructure.database.models.notification import (
+    Notification,
+    NotificationPriority,
+    NotificationType,
+)
 from pilot_space.infrastructure.database.models.onboarding import WorkspaceOnboarding
 from pilot_space.infrastructure.database.models.pilot_api_key import PilotAPIKey
 from pilot_space.infrastructure.database.models.pm_block_insight import PMBlockInsight
 from pilot_space.infrastructure.database.models.project import Project
+from pilot_space.infrastructure.database.models.skill_action_button import (
+    BindingType,
+    SkillActionButton,
+)
 from pilot_space.infrastructure.database.models.skill_execution import (
     SkillApprovalRole,
     SkillApprovalStatus,
     SkillExecution,
 )
+from pilot_space.infrastructure.database.models.skill_template import SkillTemplate
 from pilot_space.infrastructure.database.models.state import (
     DEFAULT_STATES,
     State,
@@ -105,13 +117,21 @@ from pilot_space.infrastructure.database.models.user_role_skill import (
     RoleTemplate,
     UserRoleSkill,
 )
+from pilot_space.infrastructure.database.models.user_skill import UserSkill
 from pilot_space.infrastructure.database.models.work_intent import (
     IntentArtifact,
     WorkIntent,
 )
 from pilot_space.infrastructure.database.models.workspace import Workspace
+from pilot_space.infrastructure.database.models.workspace_ai_policy import WorkspaceAIPolicy
 from pilot_space.infrastructure.database.models.workspace_api_key import WorkspaceAPIKey
 from pilot_space.infrastructure.database.models.workspace_digest import WorkspaceDigest
+from pilot_space.infrastructure.database.models.workspace_encryption_key import (
+    WorkspaceEncryptionKey,
+)
+from pilot_space.infrastructure.database.models.workspace_github_credential import (
+    WorkspaceGithubCredential,
+)
 from pilot_space.infrastructure.database.models.workspace_invitation import (
     InvitationStatus,
     WorkspaceInvitation,
@@ -120,6 +140,9 @@ from pilot_space.infrastructure.database.models.workspace_member import (
     WorkspaceMember,
     WorkspaceRole,
 )
+from pilot_space.infrastructure.database.models.workspace_plugin import WorkspacePlugin
+from pilot_space.infrastructure.database.models.workspace_role_skill import WorkspaceRoleSkill
+from pilot_space.infrastructure.database.models.workspace_session import WorkspaceSession
 
 __all__ = [
     "DEFAULT_STATES",
@@ -133,13 +156,17 @@ __all__ = [
     "AIToolCall",
     "Activity",
     "ActivityType",
+    "ActorType",
     "AnnotationStatus",
     "AnnotationType",
     "ApprovalStatus",
+    "AuditLog",
     "Base",
     "BaseModel",
+    "BindingType",
     "ChatAttachment",
     "ConstitutionRule",
+    "CustomRole",
     "Cycle",
     "CycleStatus",
     "DigestDismissal",
@@ -175,13 +202,18 @@ __all__ = [
     "NoteNoteLink",
     "NoteNoteLinkType",
     "NoteVersion",
+    "Notification",
+    "NotificationPriority",
+    "NotificationType",
     "PMBlockInsight",
     "PilotAPIKey",
     "Project",
     "RoleTemplate",
+    "SkillActionButton",
     "SkillApprovalRole",
     "SkillApprovalStatus",
     "SkillExecution",
+    "SkillTemplate",
     "SlugMixin",
     "SoftDeleteMixin",
     "State",
@@ -194,16 +226,23 @@ __all__ = [
     "ToolCallStatus",
     "User",
     "UserRoleSkill",
+    "UserSkill",
     "VersionTrigger",
     "WorkIntent",
     "Workspace",
+    "WorkspaceAIPolicy",
     "WorkspaceAPIKey",
     "WorkspaceDigest",
+    "WorkspaceEncryptionKey",
+    "WorkspaceGithubCredential",
     "WorkspaceInvitation",
     "WorkspaceMember",
     "WorkspaceOnboarding",
+    "WorkspacePlugin",
     "WorkspaceRole",
+    "WorkspaceRoleSkill",
     "WorkspaceScopedMixin",
     "WorkspaceScopedModel",
+    "WorkspaceSession",
     "issue_labels",
 ]

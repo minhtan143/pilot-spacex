@@ -1,13 +1,15 @@
 """Main DI container with services, AI providers, and wiring configuration.
 
-Container inherits from InfraContainer (config, auth, repos, clients)
-and adds all service factories, AI infrastructure, and module wiring.
+Container inherits SkillContainer and PluginContainer (both inherit InfraContainer)
+to compose all providers while keeping each module under 700 lines.
+See _skill_providers.py and _plugin_providers.py for extracted groups.
 """
 
 from __future__ import annotations
 
 from dependency_injector import containers, providers
 
+from pilot_space.ai.infrastructure.cost_tracker import CostTracker
 from pilot_space.application.services.ai import (
     AttachmentContentService,
     AttachmentUploadService,
@@ -77,15 +79,8 @@ from pilot_space.application.services.onboarding import (
     UpdateOnboardingService,
 )
 from pilot_space.application.services.pm_block_insight_service import PMBlockInsightService
-from pilot_space.application.services.role_skill import (
-    CreateRoleSkillService,
-    DeleteRoleSkillService,
-    GenerateRoleSkillService,
-    ListRoleSkillsService,
-    UpdateRoleSkillService,
-)
-from pilot_space.application.services.skill.concurrency_manager import SkillConcurrencyManager
-from pilot_space.application.services.skill.skill_execution_service import SkillExecutionService
+from pilot_space.application.services.rbac_service import RbacService
+from pilot_space.application.services.sso_service import SsoService
 from pilot_space.application.services.task_service import TaskService
 from pilot_space.application.services.version.diff_service import VersionDiffService
 from pilot_space.application.services.version.digest_service import VersionDigestService
@@ -113,14 +108,29 @@ from pilot_space.container._factories import (
     create_tool_registry,
     get_default_redirect_origin,
 )
+from pilot_space.container._plugin_providers import PluginContainer
+from pilot_space.container._skill_providers import SkillContainer
 from pilot_space.dependencies.auth import get_current_session
+from pilot_space.infrastructure.database.repositories.audit_log_repository import (
+    AuditLogRepository,
+)
+from pilot_space.infrastructure.database.repositories.custom_role_repository import (
+    CustomRoleRepository,
+)
+from pilot_space.infrastructure.database.repositories.workspace_ai_policy_repository import (
+    WorkspaceAIPolicyRepository,
+)
+from pilot_space.infrastructure.database.repositories.workspace_member_repository import (
+    WorkspaceMemberRepository as WorkspaceMemberRbacRepository,
+)
 
 
-class Container(InfraContainer):
+class Container(SkillContainer, PluginContainer):
     """Main application DI container.
 
-    Inherits infrastructure providers from InfraContainer and adds
-    service factories, AI infrastructure, and module wiring.
+    Inherits skill providers (SkillContainer) and plugin/seeding providers
+    (PluginContainer). Both intermediate containers inherit InfraContainer,
+    so all infrastructure providers are available here via MRO.
 
     Usage:
         container = Container()
@@ -137,6 +147,7 @@ class Container(InfraContainer):
             "pilot_space.api.v1.dependencies_pilot",
             "pilot_space.api.v1.repository_deps",
             "pilot_space.api.v1.intent_deps",
+            "pilot_space.api.v1.dependencies_workspace_skills",
         ],
     )
 
@@ -165,6 +176,25 @@ class Container(InfraContainer):
         session_manager=session_manager,
         space_manager=space_manager,
         queue_client=InfraContainer.queue_client,
+        session_factory=InfraContainer.session_factory,
+    )
+
+    # AI Cost Tracker (AIGOV-06) — Factory so each request gets a session-bound instance
+    cost_tracker = providers.Factory(
+        CostTracker,
+        session=providers.Callable(get_current_session),
+    )
+
+    # AI Policy Repository (AIGOV-01) — Factory per request
+    workspace_ai_policy_repository = providers.Factory(
+        WorkspaceAIPolicyRepository,
+        session=providers.Callable(get_current_session),
+    )
+
+    # Audit Log Repository (AUDIT-01) — Factory per request
+    audit_log_repository = providers.Factory(
+        AuditLogRepository,
+        session=providers.Callable(get_current_session),
     )
 
     # ===== Service Factories =====
@@ -177,6 +207,7 @@ class Container(InfraContainer):
         activity_repository=InfraContainer.activity_repository,
         label_repository=InfraContainer.label_repository,
         queue=InfraContainer.queue_client,
+        audit_log_repository=audit_log_repository,
     )
 
     update_issue_service = providers.Factory(
@@ -186,6 +217,7 @@ class Container(InfraContainer):
         activity_repository=InfraContainer.activity_repository,
         label_repository=InfraContainer.label_repository,
         queue=InfraContainer.queue_client,
+        audit_log_repository=audit_log_repository,
     )
 
     get_issue_service = providers.Factory(
@@ -210,6 +242,7 @@ class Container(InfraContainer):
         note_repository=InfraContainer.note_repository,
         template_repository=InfraContainer.template_repository,
         queue=InfraContainer.queue_client,
+        audit_log_repository=audit_log_repository,
     )
 
     update_note_service = providers.Factory(
@@ -217,6 +250,7 @@ class Container(InfraContainer):
         session=providers.Callable(get_current_session),
         note_repository=InfraContainer.note_repository,
         queue=InfraContainer.queue_client,
+        audit_log_repository=audit_log_repository,
     )
 
     get_note_service = providers.Factory(
@@ -248,7 +282,7 @@ class Container(InfraContainer):
         DeleteNoteService,
         session=providers.Callable(get_current_session),
         note_repository=InfraContainer.note_repository,
-        activity_repository=InfraContainer.activity_repository,
+        audit_log_repository=audit_log_repository,
     )
 
     pin_note_service = providers.Factory(
@@ -275,6 +309,7 @@ class Container(InfraContainer):
         session=providers.Callable(get_current_session),
         issue_repository=InfraContainer.issue_repository,
         activity_repository=InfraContainer.activity_repository,
+        audit_log_repository=audit_log_repository,
     )
 
     # Issue Implement Context Service
@@ -293,6 +328,7 @@ class Container(InfraContainer):
         session=providers.Callable(get_current_session),
         cycle_repository=InfraContainer.cycle_repository,
         queue=InfraContainer.queue_client,
+        audit_log_repository=audit_log_repository,
     )
 
     update_cycle_service = providers.Factory(
@@ -300,6 +336,7 @@ class Container(InfraContainer):
         session=providers.Callable(get_current_session),
         cycle_repository=InfraContainer.cycle_repository,
         queue=InfraContainer.queue_client,
+        audit_log_repository=audit_log_repository,
     )
 
     get_cycle_service = providers.Factory(
@@ -313,6 +350,8 @@ class Container(InfraContainer):
         session=providers.Callable(get_current_session),
         issue_repository=InfraContainer.issue_repository,
         cycle_repository=InfraContainer.cycle_repository,
+        activity_repository=InfraContainer.activity_repository,
+        audit_log_repository=audit_log_repository,
     )
 
     rollover_cycle_service = providers.Factory(
@@ -333,9 +372,7 @@ class Container(InfraContainer):
         pilotspace_agent=pilotspace_agent,
         tool_registry=tool_registry,
         provider_selector=provider_selector,
-        cost_tracker=providers.Callable(
-            lambda: None
-        ),  # Cost tracker requires request-scoped session
+        cost_tracker=cost_tracker,
         resilient_executor=resilient_executor,
     )
 
@@ -347,7 +384,7 @@ class Container(InfraContainer):
         pilotspace_agent=pilotspace_agent,
         tool_registry=tool_registry,
         provider_selector=provider_selector,
-        cost_tracker=providers.Callable(lambda: None),
+        cost_tracker=cost_tracker,
         resilient_executor=resilient_executor,
     )
 
@@ -432,32 +469,6 @@ class Container(InfraContainer):
         UpdateOnboardingService,
         session=providers.Callable(get_current_session),
         onboarding_repository=InfraContainer.onboarding_repository,
-    )
-
-    # Role Skill Services
-    create_role_skill_service = providers.Factory(
-        CreateRoleSkillService,
-        session=providers.Callable(get_current_session),
-    )
-
-    update_role_skill_service = providers.Factory(
-        UpdateRoleSkillService,
-        session=providers.Callable(get_current_session),
-    )
-
-    delete_role_skill_service = providers.Factory(
-        DeleteRoleSkillService,
-        session=providers.Callable(get_current_session),
-    )
-
-    list_role_skills_service = providers.Factory(
-        ListRoleSkillsService,
-        session=providers.Callable(get_current_session),
-    )
-
-    generate_role_skill_service = providers.Factory(
-        GenerateRoleSkillService,
-        session=providers.Callable(get_current_session),
     )
 
     # Homepage Services
@@ -571,25 +582,10 @@ class Container(InfraContainer):
         intent_repository=InfraContainer.work_intent_repository,
     )
 
-    # Skill Concurrency Manager (T-047) — Redis-backed, one per process
-    skill_concurrency_manager = providers.Singleton(
-        SkillConcurrencyManager,
-        redis_client=InfraContainer.redis_client,
-    )
-
     # Note Write Lock (C-3) — Redis-backed mutex, one per process
     note_write_lock = providers.Singleton(
         NoteWriteLock,
         redis_client=InfraContainer.redis_client,
-    )
-
-    # Skill Execution Service (T-044, T-045)
-    skill_execution_service = providers.Factory(
-        SkillExecutionService,
-        session=providers.Callable(get_current_session),
-        skill_exec_repo=InfraContainer.skill_execution_repository,
-        intent_repo=InfraContainer.work_intent_repository,
-        concurrency_manager=skill_concurrency_manager,
     )
 
     # Note Version Services
@@ -657,6 +653,31 @@ class Container(InfraContainer):
         session=providers.Callable(get_current_session),
         constitution_repository=InfraContainer.constitution_rule_repository,
         queue=InfraContainer.queue_client,
+    )
+
+    # SSO Service (AUTH-01 through AUTH-04)
+    sso_service = providers.Factory(
+        SsoService,
+        workspace_repo=InfraContainer.workspace_repository,
+        supabase_admin_client=InfraContainer.supabase_auth,
+    )
+
+    # RBAC repositories and service (AUTH-05)
+    custom_role_repository = providers.Factory(
+        CustomRoleRepository,
+        session=providers.Callable(get_current_session),
+    )
+
+    workspace_member_rbac_repository = providers.Factory(
+        WorkspaceMemberRbacRepository,
+        session=providers.Callable(get_current_session),
+    )
+
+    rbac_service = providers.Factory(
+        RbacService,
+        custom_role_repo=custom_role_repository,
+        workspace_member_repo=workspace_member_rbac_repository,
+        audit_log_repository=audit_log_repository,
     )
 
 

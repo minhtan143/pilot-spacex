@@ -18,6 +18,9 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from pilot_space.infrastructure.database.repositories import CycleRepository
+    from pilot_space.infrastructure.database.repositories.audit_log_repository import (
+        AuditLogRepository,
+    )
     from pilot_space.infrastructure.queue.supabase_queue import SupabaseQueueClient
 
 logger = get_logger(__name__)
@@ -41,6 +44,7 @@ class CreateCyclePayload:
     workspace_id: UUID
     project_id: UUID
     name: str
+    actor_id: UUID | None = None
     description: str | None = None
     start_date: date | None = None
     end_date: date | None = None
@@ -70,6 +74,7 @@ class CreateCycleService:
         session: AsyncSession,
         cycle_repository: CycleRepository,
         queue: SupabaseQueueClient | None = None,
+        audit_log_repository: AuditLogRepository | None = None,
     ) -> None:
         """Initialize service.
 
@@ -77,10 +82,12 @@ class CreateCycleService:
             session: Async database session.
             cycle_repository: Cycle repository.
             queue: Optional queue client for KG population.
+            audit_log_repository: Optional audit log repository for compliance writes.
         """
         self._session = session
         self._cycle_repo = cycle_repository
         self._queue = queue
+        self._audit_repo = audit_log_repository
 
     async def execute(self, payload: CreateCyclePayload) -> CreateCycleResult:
         """Create a new cycle.
@@ -165,6 +172,30 @@ class CreateCycleService:
                 )
             except Exception as exc:
                 logger.warning("CreateCycleService: failed to enqueue kg_populate: %s", exc)
+
+        # Write audit log entry (non-fatal)
+        if self._audit_repo is not None and cycle is not None:
+            try:
+                from pilot_space.infrastructure.database.models.audit_log import ActorType
+
+                await self._audit_repo.create(
+                    workspace_id=payload.workspace_id,
+                    actor_id=payload.actor_id,
+                    actor_type=ActorType.USER,
+                    action="cycle.create",
+                    resource_type="cycle",
+                    resource_id=cycle.id,
+                    payload={
+                        "before": {},
+                        "after": {
+                            "name": cycle.name,
+                            "status": cycle.status.value if cycle.status else None,
+                        },
+                    },
+                    ip_address=None,
+                )
+            except Exception as exc:
+                logger.warning("CreateCycleService: failed to write audit log: %s", exc)
 
         return CreateCycleResult(
             cycle=cycle,  # type: ignore[arg-type]

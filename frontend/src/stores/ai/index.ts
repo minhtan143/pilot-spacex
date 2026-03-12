@@ -10,6 +10,15 @@ export { GhostTextStore } from './GhostTextStore';
 export { AIContextStore } from './AIContextStore';
 export { ApprovalStore } from './ApprovalStore';
 export { AISettingsStore } from './AISettingsStore';
+export { MCPServersStore } from './MCPServersStore';
+export type {
+  MCPServer,
+  MCPServerStatus,
+  MCPServerListResponse,
+  MCPServerRegisterRequest,
+} from './MCPServersStore';
+export { PluginsStore } from './PluginsStore';
+export type { InstalledPlugin, PluginGroup } from './PluginsStore';
 export { PRReviewStore } from './PRReviewStore';
 export { MarginAnnotationStore } from './MarginAnnotationStore';
 export { CostStore } from './CostStore';
