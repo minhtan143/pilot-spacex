@@ -51,14 +51,13 @@ Full archive: `.planning/milestones/v1.0-alpha-ROADMAP.md`
 
 ### Phase 21: Documentation & Verification Closure
 **Goal:** Close all documentation and verification process gaps from v1.0-alpha audit
-**Requirements:** WRSKL-01, WRSKL-02, WRSKL-03, WRSKL-04 (verification gap → satisfied)
-**Gap Closure:** Closes 4 requirement gaps (partial → satisfied) + 4 documentation gaps from audit
+**Requirements:** WRSKL-01, WRSKL-02, WRSKL-03, WRSKL-04 (verification gap -> satisfied)
+**Gap Closure:** Closes 4 requirement gaps (partial -> satisfied) + 4 documentation gaps from audit
+**Plans:** 1/2 plans executed
 
-Tasks:
-1. Generate Phase 16 VERIFICATION.md (closes WRSKL-01..04 partial status)
-2. Add SKRG-01..05 to REQUIREMENTS.md traceability table (5 missing rows)
-3. Add P20-01..10 to REQUIREMENTS.md traceability table (10 missing rows)
-4. Fix ONBD-03..05 in 12-02-SUMMARY.md and CHAT-01..03 in 13-04-SUMMARY.md frontmatter
+Plans:
+- [ ] 21-01-PLAN.md — Generate Phase 16 VERIFICATION.md and update REQUIREMENTS.md traceability
+- [ ] 21-02-PLAN.md — Fix SUMMARY frontmatter in 12-02 and 13-04
 
 ### Phase 22: Integration Safety — Session & OAuth2 UI
 **Goal:** Fix session sharing race condition and add OAuth2 MCP authorization UI
@@ -68,7 +67,7 @@ Tasks:
 Tasks:
 1. Fix SeedPluginsService fire-and-forget session sharing (workspaces.py:152) — use independent session
 2. Add OAuth2 "Authorize" button in MCP server management UI (mcp-server-form.tsx or server list)
-3. Wire OAuth2 authorization flow end-to-end (store → API → redirect → callback)
+3. Wire OAuth2 authorization flow end-to-end (store -> API -> redirect -> callback)
 
 ### Phase 23: Tech Debt Sweep
 **Goal:** Close remaining tech debt items identified in v1.0-alpha audit
@@ -80,7 +79,7 @@ Tasks:
 2. Remove dead `schemas/mcp_server.py` file (3825 bytes, superseded)
 3. Fix stale `item["issue_id"]` in test_related_issues.py (lines 165, 427)
 4. Verify DELETE relation endpoint soft-delete vs hard-delete behavior
-5. Fix Update Available badge color (blue → orange per spec)
+5. Fix Update Available badge color (blue -> orange per spec)
 6. Refactor `ai_chat.py` below 700-line limit
 7. Extend `AISettingsStore.validateKey` to handle all provider types
 
