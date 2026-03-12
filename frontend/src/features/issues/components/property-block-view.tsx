@@ -162,7 +162,7 @@ export const PropertyBlockView = observer(function PropertyBlockView() {
         role="group"
         aria-label="Issue properties"
         className={cn(
-          'rounded-[10px] border border-[#E5E2DD] bg-[#F8F6F3]',
+          'rounded-[10px] border border-border bg-muted/40',
           'px-3 py-2',
           'motion-safe:transition-all motion-safe:duration-200'
         )}
