@@ -42,7 +42,7 @@ mcp_oauth_callback_router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Pydantic schemas (inline — no separate file needed given size constraint)
+# Pydantic schemas (inline -- no separate file needed given size constraint)
 # ---------------------------------------------------------------------------
 
 
@@ -103,7 +103,7 @@ class McpOAuthUrlResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Admin gate helper (copied verbatim from workspace_ai_settings.py — no import coupling)
+# Admin gate helper (copied verbatim from workspace_ai_settings.py -- no import coupling)
 # ---------------------------------------------------------------------------
 
 
@@ -147,7 +147,7 @@ async def _get_admin_workspace(
 
 
 # ---------------------------------------------------------------------------
-# POST /{workspace_id}/mcp-servers — Register server (MCP-01, MCP-02)
+# POST /{workspace_id}/mcp-servers -- Register server (MCP-01, MCP-02)
 # ---------------------------------------------------------------------------
 
 
@@ -215,7 +215,7 @@ async def register_mcp_server(
 
 
 # ---------------------------------------------------------------------------
-# GET /{workspace_id}/mcp-servers — List active servers (MCP-01)
+# GET /{workspace_id}/mcp-servers -- List active servers (MCP-01)
 # ---------------------------------------------------------------------------
 
 
@@ -254,7 +254,7 @@ async def list_mcp_servers(
 
 
 # ---------------------------------------------------------------------------
-# GET /{workspace_id}/mcp-servers/{server_id}/status — Connectivity probe (MCP-05)
+# GET /{workspace_id}/mcp-servers/{server_id}/status -- Connectivity probe (MCP-05)
 # ---------------------------------------------------------------------------
 
 
@@ -349,7 +349,7 @@ async def get_mcp_server_status(
 
 
 # ---------------------------------------------------------------------------
-# DELETE /{workspace_id}/mcp-servers/{server_id} — Soft-delete (MCP-06)
+# DELETE /{workspace_id}/mcp-servers/{server_id} -- Soft-delete (MCP-06)
 # ---------------------------------------------------------------------------
 
 
@@ -400,7 +400,7 @@ async def delete_mcp_server(
 
 
 # ---------------------------------------------------------------------------
-# GET /{workspace_id}/mcp-servers/{server_id}/oauth-url — OAuth init (MCP-03)
+# GET /{workspace_id}/mcp-servers/{server_id}/oauth-url -- OAuth init (MCP-03)
 # ---------------------------------------------------------------------------
 
 
@@ -435,7 +435,7 @@ async def get_mcp_oauth_url(
     Returns:
         Authorization URL and state token.
     """
-    await _get_admin_workspace(workspace_id, current_user, session)
+    workspace = await _get_admin_workspace(workspace_id, current_user, session)
 
     from pilot_space.infrastructure.database.repositories.workspace_mcp_server_repository import (
         WorkspaceMcpServerRepository,
@@ -462,12 +462,13 @@ async def get_mcp_oauth_url(
     nonce = secrets.token_urlsafe(32)
     state = f"mcp_oauth_{server_id}_{nonce}"
 
-    # Store state in Redis with 10-minute TTL
+    # Store state in Redis with 10-minute TTL (includes workspace_slug for callback redirect)
     redis_client = _get_redis_client(request)
     if redis_client is not None:
         state_data: dict[str, Any] = {
             "server_id": str(server_id),
             "workspace_id": str(workspace_id),
+            "workspace_slug": workspace.slug,
             "nonce": nonce,
         }
         import json
@@ -501,7 +502,7 @@ async def get_mcp_oauth_url(
 
 
 # ---------------------------------------------------------------------------
-# OAuth callback — mounted separately under /api/v1/oauth2
+# OAuth callback -- mounted separately under /api/v1/oauth2
 # ---------------------------------------------------------------------------
 
 
@@ -518,12 +519,12 @@ async def mcp_oauth_callback(
 ) -> RedirectResponse:
     """Handle OAuth 2.0 callback for MCP server token exchange (MCP-03).
 
-    No JWT authentication required — this endpoint is called by the OAuth
+    No JWT authentication required -- this endpoint is called by the OAuth
     provider's redirect after the admin grants access. It:
-      1. Reads OAuth state from Redis to get server_id + workspace_id.
+      1. Reads OAuth state from Redis to get server_id + workspace_id + workspace_slug.
       2. POSTs to the server's token_url to exchange code for access token.
       3. Encrypts the access token and stores it in auth_token_encrypted.
-      4. Redirects browser to /settings/mcp-servers?status=connected.
+      4. Redirects browser to /{workspace_slug}/settings/mcp-servers?status=connected.
 
     Args:
         request: FastAPI request (for Redis + DB access).
@@ -531,33 +532,42 @@ async def mcp_oauth_callback(
         state: State token matching what was stored in Redis.
         error: OAuth error from provider (if authorization failed).
     """
-    redirect_base = "/settings/mcp-servers"
+    # Fallback redirect for error paths before state is parsed
+    fallback_redirect = "/settings/mcp-servers"
 
     if error:
         logger.warning("mcp_oauth_callback_error", oauth_error=error)
         return RedirectResponse(
-            url=redirect_base + "?" + urllib.parse.urlencode({"status": "error", "reason": error})
+            url=fallback_redirect
+            + "?"
+            + urllib.parse.urlencode({"status": "error", "reason": error})
         )
 
     if not code or not state:
-        return RedirectResponse(url=f"{redirect_base}?status=error&reason=missing_params")
+        return RedirectResponse(url=f"{fallback_redirect}?status=error&reason=missing_params")
 
     redis_client = _get_redis_client(request)
     if redis_client is None:
-        return RedirectResponse(url=f"{redirect_base}?status=error&reason=no_redis")
+        return RedirectResponse(url=f"{fallback_redirect}?status=error&reason=no_redis")
 
     import json
 
     raw = await redis_client.client.get(f"mcp_oauth_state:{state}")
     if raw is None:
-        return RedirectResponse(url=f"{redirect_base}?status=error&reason=invalid_state")
+        return RedirectResponse(url=f"{fallback_redirect}?status=error&reason=invalid_state")
 
     try:
         state_data = json.loads(raw)
         server_id = UUID(state_data["server_id"])
         workspace_id = UUID(state_data["workspace_id"])
     except (json.JSONDecodeError, KeyError, ValueError):
-        return RedirectResponse(url=f"{redirect_base}?status=error&reason=state_decode_error")
+        return RedirectResponse(url=f"{fallback_redirect}?status=error&reason=state_decode_error")
+
+    # Build redirect base with workspace slug (if available in state)
+    workspace_slug = state_data.get("workspace_slug", "")
+    redirect_base = (
+        f"/{workspace_slug}/settings/mcp-servers" if workspace_slug else "/settings/mcp-servers"
+    )
 
     # Invalidate state immediately (one-time use)
     await redis_client.client.delete(f"mcp_oauth_state:{state}")
