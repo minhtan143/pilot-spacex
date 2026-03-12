@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from pilot_space.infrastructure.database.repositories import CycleRepository
+    from pilot_space.infrastructure.queue.supabase_queue import SupabaseQueueClient
 
 logger = get_logger(__name__)
 
@@ -68,15 +69,18 @@ class CreateCycleService:
         self,
         session: AsyncSession,
         cycle_repository: CycleRepository,
+        queue: SupabaseQueueClient | None = None,
     ) -> None:
         """Initialize service.
 
         Args:
             session: Async database session.
             cycle_repository: Cycle repository.
+            queue: Optional queue client for KG population.
         """
         self._session = session
         self._cycle_repo = cycle_repository
+        self._queue = queue
 
     async def execute(self, payload: CreateCyclePayload) -> CreateCycleResult:
         """Create a new cycle.
@@ -143,6 +147,24 @@ class CreateCycleService:
                 "name": cycle.name if cycle else None,
             },
         )
+
+        # Enqueue KG populate job (non-fatal)
+        if self._queue is not None and cycle is not None:
+            try:
+                from pilot_space.infrastructure.queue.models import QueueName
+
+                await self._queue.enqueue(
+                    QueueName.AI_NORMAL,
+                    {
+                        "task_type": "kg_populate",
+                        "entity_type": "cycle",
+                        "entity_id": str(cycle.id),
+                        "workspace_id": str(payload.workspace_id),
+                        "project_id": str(payload.project_id),
+                    },
+                )
+            except Exception as exc:
+                logger.warning("CreateCycleService: failed to enqueue kg_populate: %s", exc)
 
         return CreateCycleResult(
             cycle=cycle,  # type: ignore[arg-type]

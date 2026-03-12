@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from pilot_space.infrastructure.database.repositories import CycleRepository
+    from pilot_space.infrastructure.queue.supabase_queue import SupabaseQueueClient
 
 logger = get_logger(__name__)
 
@@ -72,15 +73,18 @@ class UpdateCycleService:
         self,
         session: AsyncSession,
         cycle_repository: CycleRepository,
+        queue: SupabaseQueueClient | None = None,
     ) -> None:
         """Initialize service.
 
         Args:
             session: Async database session.
             cycle_repository: Cycle repository.
+            queue: Optional queue client for KG population.
         """
         self._session = session
         self._cycle_repo = cycle_repository
+        self._queue = queue
 
     async def execute(self, payload: UpdateCyclePayload) -> UpdateCycleResult:
         """Update a cycle.
@@ -165,6 +169,29 @@ class UpdateCycleService:
                 "updated_fields": updated_fields,
             },
         )
+
+        # Enqueue KG populate on content-relevant changes (non-fatal)
+        kg_relevant_fields = {"name", "description", "status"}
+        if (
+            self._queue is not None
+            and cycle is not None
+            and kg_relevant_fields & set(updated_fields)
+        ):
+            try:
+                from pilot_space.infrastructure.queue.models import QueueName
+
+                await self._queue.enqueue(
+                    QueueName.AI_NORMAL,
+                    {
+                        "task_type": "kg_populate",
+                        "entity_type": "cycle",
+                        "entity_id": str(cycle.id),
+                        "workspace_id": str(cycle.workspace_id),
+                        "project_id": str(cycle.project_id),
+                    },
+                )
+            except Exception as exc:
+                logger.warning("UpdateCycleService: failed to enqueue kg_populate: %s", exc)
 
         return UpdateCycleResult(
             cycle=cycle,  # type: ignore[arg-type]

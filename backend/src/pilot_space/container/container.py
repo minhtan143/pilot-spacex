@@ -185,6 +185,7 @@ class Container(InfraContainer):
         issue_repository=InfraContainer.issue_repository,
         activity_repository=InfraContainer.activity_repository,
         label_repository=InfraContainer.label_repository,
+        queue=InfraContainer.queue_client,
     )
 
     get_issue_service = providers.Factory(
@@ -291,12 +292,14 @@ class Container(InfraContainer):
         CreateCycleService,
         session=providers.Callable(get_current_session),
         cycle_repository=InfraContainer.cycle_repository,
+        queue=InfraContainer.queue_client,
     )
 
     update_cycle_service = providers.Factory(
         UpdateCycleService,
         session=providers.Callable(get_current_session),
         cycle_repository=InfraContainer.cycle_repository,
+        queue=InfraContainer.queue_client,
     )
 
     get_cycle_service = providers.Factory(

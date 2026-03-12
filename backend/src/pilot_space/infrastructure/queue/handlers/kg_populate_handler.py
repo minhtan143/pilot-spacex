@@ -1,7 +1,7 @@
-"""Background job handler: build Knowledge Graph nodes from issues and notes.
+"""Background job handler: build Knowledge Graph nodes from SDLC entities.
 
-Triggered on issue creation and note create/update. Converts TipTap JSON to
-Markdown, chunks notes by heading boundaries, upserts graph nodes, and creates
+Triggered on entity creation/update for issues, notes, projects, and cycles.
+Converts content to searchable text, upserts graph nodes, and creates
 RELATES_TO edges to similar same-project content via embedding similarity.
 
 Feature 016: Knowledge Graph — automated KG population.
@@ -9,12 +9,13 @@ Feature 016: Knowledge Graph — automated KG population.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pilot_space.application.services.embedding_service import EmbeddingService
@@ -30,9 +31,11 @@ from pilot_space.application.services.note.markdown_chunker import (
 from pilot_space.domain.graph_edge import EdgeType, GraphEdge
 from pilot_space.domain.graph_node import NodeType
 from pilot_space.domain.graph_query import ScoredNode
+from pilot_space.infrastructure.database.models.cycle import Cycle as CycleModel
 from pilot_space.infrastructure.database.models.graph_node import GraphNodeModel
 from pilot_space.infrastructure.database.models.issue import Issue as IssueModel
 from pilot_space.infrastructure.database.models.note import Note as NoteModel
+from pilot_space.infrastructure.database.models.project import Project as ProjectModel
 from pilot_space.infrastructure.database.repositories.knowledge_graph_repository import (
     KnowledgeGraphRepository,
 )
@@ -53,7 +56,7 @@ _MIN_CHUNK_CHARS = 50  # merge heading sections shorter than this
 class _KgPopulatePayload:
     workspace_id: UUID
     project_id: UUID
-    entity_type: str  # "issue" | "note"
+    entity_type: str  # "issue" | "note" | "project" | "cycle"
     entity_id: UUID
 
     @classmethod
@@ -67,12 +70,18 @@ class _KgPopulatePayload:
 
 
 class KgPopulateHandler:
-    """Populate KG nodes for an issue or note, then link similar project content.
+    """Populate KG nodes for SDLC entities, then link similar project content.
+
+    Supported entity types: issue, note, project, cycle.
 
     Invariants:
-    - All failures are non-fatal: logged as warnings, never re-raised.
+    - Validation errors (bad payload, entity not found) return {"success": False}
+      so the worker can ACK them (non-retryable).
+    - Infrastructure errors (DB, embedding) propagate as exceptions so the worker
+      can retry or dead-letter them.
     - Embedding absence degrades gracefully (nodes still created, text-searchable).
     - NOTE_CHUNK nodes for the same note are replaced on each run (stale cleanup).
+    - Handler does NOT commit — the worker owns the single commit per job.
     """
 
     def __init__(
@@ -88,29 +97,28 @@ class KgPopulateHandler:
         self._converter = ContentConverter()
 
     async def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Dispatch to _handle_issue or _handle_note based on entity_type."""
+        """Dispatch to _handle_issue or _handle_note based on entity_type.
+
+        Validation errors (bad payload, unknown entity_type) return
+        ``{"success": False}`` so the worker ACKs them. Infrastructure
+        errors propagate as exceptions for worker retry / dead-letter.
+        """
         try:
             p = _KgPopulatePayload.from_dict(payload)
         except (KeyError, ValueError) as exc:
             logger.warning("KgPopulateHandler: invalid payload %r — %s", payload, exc)
             return {"success": False, "error": str(exc)}
 
-        try:
-            if p.entity_type == "issue":
-                return await self._handle_issue(p)
-            if p.entity_type == "note":
-                return await self._handle_note(p)
-            logger.warning("KgPopulateHandler: unknown entity_type %r", p.entity_type)
-            return {"success": False, "error": f"unknown entity_type: {p.entity_type}"}
-        except Exception as exc:
-            logger.warning(
-                "KgPopulateHandler: failed for %s %s — %s",
-                p.entity_type,
-                p.entity_id,
-                exc,
-                exc_info=True,
-            )
-            return {"success": False, "error": str(exc)}
+        if p.entity_type == "issue":
+            return await self._handle_issue(p)
+        if p.entity_type == "note":
+            return await self._handle_note(p)
+        if p.entity_type == "project":
+            return await self._handle_project(p)
+        if p.entity_type == "cycle":
+            return await self._handle_cycle(p)
+        logger.warning("KgPopulateHandler: unknown entity_type %r", p.entity_type)
+        return {"success": False, "error": f"unknown entity_type: {p.entity_type}"}
 
     # ------------------------------------------------------------------
     # Issue handling
@@ -129,6 +137,7 @@ class KgPopulateHandler:
             knowledge_graph_repository=self._repo,
             queue=self._queue,
             session=self._session,
+            auto_commit=False,
         )
         result = await write_svc.execute(
             GraphWritePayload(
@@ -172,6 +181,15 @@ class KgPopulateHandler:
     # ------------------------------------------------------------------
 
     async def _handle_note(self, p: _KgPopulatePayload) -> dict[str, Any]:
+        # C-3: Advisory lock prevents concurrent chunk delete/recreate races.
+        # Transaction-scoped — auto-releases on worker commit/rollback.
+        # contextlib.suppress: SQLite (tests) has no advisory locks.
+        lock_key = int.from_bytes(p.entity_id.bytes[:8], "big") & 0x7FFFFFFFFFFFFFFF
+        with contextlib.suppress(Exception):
+            await self._session.execute(
+                text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key}
+            )
+
         result_row = await self._session.execute(
             select(NoteModel).where(
                 NoteModel.id == p.entity_id,
@@ -192,6 +210,7 @@ class KgPopulateHandler:
             knowledge_graph_repository=self._repo,
             queue=self._queue,
             session=self._session,
+            auto_commit=False,
         )
 
         # Upsert the parent NOTE node
@@ -261,7 +280,7 @@ class KgPopulateHandler:
                         await self._repo.upsert_edge(edge)
                     except Exception as exc:
                         logger.warning("KgPopulateHandler: PARENT_OF edge failed: %s", exc)
-                await self._session.commit()
+                await self._session.flush()
 
         edges_created = await self._find_and_link_similar(
             all_node_ids, p.workspace_id, p.project_id, markdown[:500]
@@ -278,6 +297,128 @@ class KgPopulateHandler:
             "success": True,
             "node_ids": [str(n) for n in all_node_ids],
             "chunks": len(chunks),
+            "edges": edges_created,
+        }
+
+    # ------------------------------------------------------------------
+    # Project handling
+    # ------------------------------------------------------------------
+
+    async def _handle_project(self, p: _KgPopulatePayload) -> dict[str, Any]:
+        project = await self._session.get(ProjectModel, p.entity_id)
+        if project is None or project.is_deleted:
+            logger.warning("KgPopulateHandler: project %s not found", p.entity_id)
+            return {"success": False, "error": "project not found"}
+
+        content = f"{project.name}\n\n{project.description or ''}".strip()
+        label = project.name[:120]
+
+        write_svc = GraphWriteService(
+            knowledge_graph_repository=self._repo,
+            queue=self._queue,
+            session=self._session,
+            auto_commit=False,
+        )
+        result = await write_svc.execute(
+            GraphWritePayload(
+                workspace_id=p.workspace_id,
+                nodes=[
+                    NodeInput(
+                        node_type=NodeType.PROJECT,
+                        label=label,
+                        content=content,
+                        external_id=p.entity_id,
+                        properties={
+                            "project_id": str(p.project_id),
+                            "identifier": getattr(project, "identifier", ""),
+                            "icon": getattr(project, "icon", "") or "",
+                            "lead_id": str(project.lead_id) if project.lead_id else "",
+                        },
+                    )
+                ],
+            )
+        )
+
+        edges_created = 0
+        if result.node_ids:
+            edges_created = await self._find_and_link_similar(
+                result.node_ids, p.workspace_id, p.project_id, content
+            )
+
+        logger.info(
+            "KgPopulateHandler: project %s → node %s, %d similarity edges",
+            p.entity_id,
+            result.node_ids[0] if result.node_ids else None,
+            edges_created,
+        )
+        return {
+            "success": True,
+            "node_ids": [str(n) for n in result.node_ids],
+            "edges": edges_created,
+        }
+
+    # ------------------------------------------------------------------
+    # Cycle handling
+    # ------------------------------------------------------------------
+
+    async def _handle_cycle(self, p: _KgPopulatePayload) -> dict[str, Any]:
+        cycle = await self._session.get(CycleModel, p.entity_id)
+        if cycle is None or cycle.is_deleted:
+            logger.warning("KgPopulateHandler: cycle %s not found", p.entity_id)
+            return {"success": False, "error": "cycle not found"}
+
+        date_range = ""
+        if cycle.start_date and cycle.end_date:
+            date_range = f" [{cycle.start_date} → {cycle.end_date}]"
+        elif cycle.start_date:
+            date_range = f" [from {cycle.start_date}]"
+
+        status_str = cycle.status.value if cycle.status else ""
+        content = f"{cycle.name} ({status_str}){date_range}\n\n{cycle.description or ''}".strip()
+        label = cycle.name[:120]
+
+        write_svc = GraphWriteService(
+            knowledge_graph_repository=self._repo,
+            queue=self._queue,
+            session=self._session,
+            auto_commit=False,
+        )
+        result = await write_svc.execute(
+            GraphWritePayload(
+                workspace_id=p.workspace_id,
+                nodes=[
+                    NodeInput(
+                        node_type=NodeType.CYCLE,
+                        label=label,
+                        content=content,
+                        external_id=p.entity_id,
+                        properties={
+                            "project_id": str(p.project_id),
+                            "status": status_str,
+                            "start_date": str(cycle.start_date) if cycle.start_date else "",
+                            "end_date": str(cycle.end_date) if cycle.end_date else "",
+                            "owned_by_id": str(cycle.owned_by_id) if cycle.owned_by_id else "",
+                        },
+                    )
+                ],
+            )
+        )
+
+        edges_created = 0
+        if result.node_ids:
+            edges_created = await self._find_and_link_similar(
+                result.node_ids, p.workspace_id, p.project_id, content
+            )
+
+        logger.info(
+            "KgPopulateHandler: cycle %s → node %s, %d similarity edges",
+            p.entity_id,
+            result.node_ids[0] if result.node_ids else None,
+            edges_created,
+        )
+        return {
+            "success": True,
+            "node_ids": [str(n) for n in result.node_ids],
             "edges": edges_created,
         }
 
@@ -340,7 +481,7 @@ class KgPopulateHandler:
                     sn.node.id,
                     exc,
                 )
-        await self._session.commit()
+        await self._session.flush()
         return edges_created
 
     async def _delete_stale_chunks(self, workspace_id: UUID, note_id: UUID) -> None:
