@@ -104,8 +104,12 @@ export function CloneContextPanel({
       textarea.style.opacity = '0';
       document.body.appendChild(textarea);
       textarea.select();
-      document.execCommand('copy');
+      const success = document.execCommand('copy');
       document.body.removeChild(textarea);
+      if (!success) {
+        toast.error('Failed to copy to clipboard');
+        return;
+      }
       setIsCopied(true);
       toast.success('Context copied to clipboard');
       if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);

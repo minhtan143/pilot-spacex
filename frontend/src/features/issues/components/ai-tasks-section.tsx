@@ -91,6 +91,7 @@ interface PersistentTaskItemProps {
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
   onDragEnd: () => void;
+  onReorderKeyDown: (e: React.KeyboardEvent) => void;
 }
 
 const PersistentTaskItem = observer(function PersistentTaskItem({
@@ -109,6 +110,7 @@ const PersistentTaskItem = observer(function PersistentTaskItem({
   onDragOver,
   onDrop,
   onDragEnd,
+  onReorderKeyDown,
 }: PersistentTaskItemProps) {
   const taskStore = useTaskStore();
   const [expanded, setExpanded] = React.useState(false);
@@ -147,6 +149,7 @@ const PersistentTaskItem = observer(function PersistentTaskItem({
     <li
       className={cn(
         'rounded-lg border border-border bg-background p-3 transition-all group',
+        'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1',
         isDragging && 'shadow-md border-ai/60 opacity-70',
         isDragOver && 'border-t-2 border-t-ai'
       )}
@@ -155,11 +158,13 @@ const PersistentTaskItem = observer(function PersistentTaskItem({
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
+      onKeyDown={onReorderKeyDown}
     >
       <div className="flex items-start gap-2.5">
         <GripVertical
-          className="size-4 mt-0.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab shrink-0"
-          aria-hidden="true"
+          className="size-4 mt-0.5 text-muted-foreground/40 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity cursor-grab shrink-0"
+          role="img"
+          aria-label="Drag to reorder, or use Ctrl+Arrow keys"
         />
         <Checkbox
           checked={isDone}
@@ -428,6 +433,37 @@ export const AITasksSection = observer(function AITasksSection({
     setDragOverIndex(null);
   }, []);
 
+  // Keyboard reorder handler (Ctrl/Cmd + Arrow Up/Down)
+  const handleReorderKeyDown = React.useCallback(
+    (currentIndex: number, currentTasks: Task[]) => {
+      return (e: React.KeyboardEvent) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        if (!issueId || !workspaceId) return;
+
+        const taskIds = currentTasks.map((t) => t.id);
+
+        if (e.key === 'ArrowUp' && currentIndex > 0) {
+          e.preventDefault();
+          const newOrder = [...taskIds];
+          const prev = newOrder[currentIndex - 1] as string;
+          const curr = newOrder[currentIndex] as string;
+          newOrder[currentIndex - 1] = curr;
+          newOrder[currentIndex] = prev;
+          void taskStore.reorderTasks(workspaceId, issueId, newOrder);
+        } else if (e.key === 'ArrowDown' && currentIndex < taskIds.length - 1) {
+          e.preventDefault();
+          const newOrder = [...taskIds];
+          const next = newOrder[currentIndex + 1] as string;
+          const curr = newOrder[currentIndex] as string;
+          newOrder[currentIndex + 1] = curr;
+          newOrder[currentIndex] = next;
+          void taskStore.reorderTasks(workspaceId, issueId, newOrder);
+        }
+      };
+    },
+    [issueId, workspaceId, taskStore]
+  );
+
   // Inline edit handlers
   const handleEditStart = React.useCallback((taskId: string, title: string) => {
     setEditingTaskId(taskId);
@@ -573,6 +609,7 @@ export const AITasksSection = observer(function AITasksSection({
                 onDragOver={handleDragOver(index)}
                 onDrop={handleDrop(index, persistentTasks)}
                 onDragEnd={handleDragEnd}
+                onReorderKeyDown={handleReorderKeyDown(index, persistentTasks)}
               />
             ))}
           </ul>

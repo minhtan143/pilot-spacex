@@ -294,7 +294,7 @@ class Issue(WorkspaceScopedModel):
         "Task",
         back_populates="issue",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="raise",
     )
 
     # Indexes and constraints
