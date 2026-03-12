@@ -7,9 +7,6 @@ optional 'latency_ms' or 'error' fields.
 
 from __future__ import annotations
 
-from pilot_space.container import get_container
-from pilot_space.infrastructure.cache import RedisClient
-
 import time
 
 

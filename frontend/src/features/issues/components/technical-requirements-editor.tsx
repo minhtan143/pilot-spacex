@@ -69,8 +69,10 @@ export function TechnicalRequirementsEditor({
     },
 
     onSettled: () => {
-      isDirtyRef.current = false;
-      pendingDataRef.current = null;
+      // Only reset if no new pending change was queued during in-flight mutation
+      if (pendingDataRef.current === null) {
+        isDirtyRef.current = false;
+      }
       void queryClient.invalidateQueries({ queryKey });
     },
   });

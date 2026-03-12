@@ -58,12 +58,18 @@ export function AcceptanceCriteriaEditor({
   const pendingDataRef = React.useRef<string[] | null>(null);
   // M-11: Track dirty state to skip prop sync
   const isDirtyRef = React.useRef(false);
+  // R-1: Monotonic counter to detect stale mutation callbacks
+  const saveIdRef = React.useRef(0);
 
   const mutation = useMutation({
     mutationFn: (acceptanceCriteria: string[]) =>
       issuesApi.update(workspaceId, issueId, { acceptanceCriteria }),
 
     onMutate: async (newCriteria) => {
+      // R-1: Capture the save ID at the moment this mutation fires so that
+      // onError/onSettled can detect if a newer save has since been scheduled.
+      const saveId = saveIdRef.current;
+
       await queryClient.cancelQueries({ queryKey });
       const previous = queryClient.getQueryData<Issue>(queryKey);
 
@@ -75,17 +81,22 @@ export function AcceptanceCriteriaEditor({
         });
       }
 
-      return { previous };
+      return { previous, saveId };
     },
 
     onError: (_err, _data, context) => {
-      if (context?.previous) {
+      // R-1: Only roll back if no newer save has been issued since this one.
+      if (context?.saveId !== saveIdRef.current) return;
+      if (context.previous) {
         queryClient.setQueryData<Issue>(queryKey, context.previous);
         setItems(toStableItems(context.previous.acceptanceCriteria ?? []));
       }
     },
 
-    onSettled: () => {
+    onSettled: (_data, _err, _vars, context) => {
+      // R-1: Only clear pending state if no newer save has been issued since
+      // this one. If a newer save exists, its onSettled will handle cleanup.
+      if (context?.saveId !== saveIdRef.current) return;
       isDirtyRef.current = false;
       pendingDataRef.current = null;
       void queryClient.invalidateQueries({ queryKey });
@@ -112,6 +123,9 @@ export function AcceptanceCriteriaEditor({
       clearTimeout(debounceRef.current);
     }
     debounceRef.current = setTimeout(() => {
+      // R-1: Increment before firing so callbacks for this save can compare
+      // against saveIdRef.current to confirm they are still the latest.
+      saveIdRef.current += 1;
       pendingDataRef.current = null;
       isDirtyRef.current = false;
       mutateRef.current(nextItems);
@@ -125,6 +139,8 @@ export function AcceptanceCriteriaEditor({
         clearTimeout(debounceRef.current);
       }
       if (pendingDataRef.current) {
+        // R-1: Increment so the flush mutation is treated as a new save.
+        saveIdRef.current += 1;
         mutateRef.current(pendingDataRef.current);
       }
     };
@@ -192,7 +208,7 @@ export function AcceptanceCriteriaEditor({
               <Button
                 variant="ghost"
                 size="sm"
-                className="size-7 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="size-7 p-0 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity"
                 onClick={() => handleRemoveItem(item.id)}
                 aria-label={`Remove criterion: ${item.text}`}
               >

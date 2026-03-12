@@ -3,7 +3,8 @@
  *
  * Verifies: stable item keys (H-8), mutateRef pattern (H-7),
  * flush-on-unmount (H-9), dirty-state prop sync skip (M-11),
- * add/remove/edit items, Enter key to add.
+ * add/remove/edit items, Enter key to add,
+ * stale-mutation guard (R-1).
  */
 
 import React from 'react';
@@ -226,5 +227,57 @@ describe('AcceptanceCriteriaEditor', () => {
     // Second and third should remain with correct values
     expect(screen.getByDisplayValue('Second criterion')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Third')).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // R-1: Stale-mutation guard — edit again before the previous mutation settles
+  // ---------------------------------------------------------------------------
+
+  it('edit again before the previous mutation settles does not wipe newer pendingDataRef/isDirtyRef (R-1)', async () => {
+    // First save: slow (never resolves during this test)
+    // Second save: fast (resolves immediately)
+    // The first save's onSettled must not clear state that belongs to the second.
+
+    let resolveFirstSave!: () => void;
+    const firstSavePromise = new Promise<void>((res) => {
+      resolveFirstSave = res;
+    });
+
+    // mockUpdate: first call is slow, subsequent calls resolve immediately.
+    let callCount = 0;
+    mockUpdate.mockImplementation(() => {
+      callCount += 1;
+      if (callCount === 1) return firstSavePromise;
+      return Promise.resolve({});
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    render(<AcceptanceCriteriaEditor {...defaultProps} />, { wrapper });
+
+    // --- First edit → first debounce fires ---
+    const firstInput = screen.getByDisplayValue('First criterion');
+    fireEvent.change(firstInput, { target: { value: 'Edit 1' } });
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    // First mutation is in-flight (slow).
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+
+    // --- Second edit while first mutation is still in-flight ---
+    fireEvent.change(firstInput, { target: { value: 'Edit 2' } });
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    // Second mutation fired immediately.
+    expect(mockUpdate).toHaveBeenCalledTimes(2);
+
+    // --- Now let the first (stale) mutation settle ---
+    await act(async () => { resolveFirstSave(); });
+
+    // The second edit's value must still be visible — stale onSettled must
+    // not have wiped the component state belonging to the second save.
+    expect(screen.getByDisplayValue('Edit 2')).toBeInTheDocument();
   });
 });

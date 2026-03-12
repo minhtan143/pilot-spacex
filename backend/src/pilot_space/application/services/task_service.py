@@ -425,7 +425,9 @@ class TaskService:
         """Create tasks from AI decomposition skill output.
 
         Uses a single bulk_create call instead of N individual create_task calls,
-        reducing DB round-trips from 2N to 2 (one list_by_issue + one bulk_create).
+        reducing DB round-trips from ~2N to N + 2:
+        1 list_by_issue + 1 INSERT (flush) + N SELECTs (refresh loop) = N + 2 round-trips.
+        This is still a significant improvement over the ~2N round-trips from per-task creates.
 
         Args:
             issue_id: Parent issue UUID
@@ -462,8 +464,9 @@ class TaskService:
             )
 
             estimated_hours: float | None = None
-            if "estimated_days" in subtask_data:
-                estimated_hours = subtask_data.get("estimated_days", 0) * 8
+            estimated_days = subtask_data.get("estimated_days")
+            if estimated_days is not None:
+                estimated_hours = estimated_days * 8
 
             task = Task(
                 workspace_id=workspace_id,
