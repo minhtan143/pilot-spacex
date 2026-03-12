@@ -93,23 +93,26 @@ export default function HomePage() {
         return;
       }
 
-      // 3. No workspaces found → clear stale stored slug, auto-create from email
+      // 3. No workspaces found → clear stale stored slug, auto-create from profile name
       localStorage.removeItem(WORKSPACE_STORAGE_KEY);
       if (!cancelled) {
         await autoCreateWorkspace();
       }
 
       async function autoCreateWorkspace(): Promise<void> {
-        // Derive display name from auth metadata or email prefix
+        // Derive display name from auth metadata; fall back to generic 'My workspace'
         const {
           data: { user },
         } = await supabase.auth.getUser();
 
-        const email = user?.email ?? '';
+        const meta = user?.user_metadata ?? {};
         const fullName =
-          (user?.user_metadata?.full_name as string | undefined) ||
-          (user?.user_metadata?.name as string | undefined) ||
-          email.split('@')[0];
+          (typeof meta.full_name === 'string' && meta.full_name.trim() !== ''
+            ? meta.full_name.trim()
+            : null) ??
+          (typeof meta.name === 'string' && meta.name.trim() !== ''
+            ? meta.name.trim()
+            : null);
 
         const displayName = fullName ? `${fullName}'s workspace` : 'My workspace';
         const baseSlug = toSlug(displayName);
