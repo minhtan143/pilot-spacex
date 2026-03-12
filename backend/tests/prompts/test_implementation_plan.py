@@ -248,7 +248,7 @@ class TestParsePlanResponse:
 
         # YAML front matter
         assert result.startswith("---\n")
-        assert "issue: PS-42" in result
+        assert 'issue: "PS-42"' in result
         assert 'title: "Add user auth"' in result
         assert "orchestrator: true" in result
         assert "model: claude-sonnet-4-6" in result
@@ -441,7 +441,7 @@ class TestParseSubagent:
         spec = _parse_subagent({}, 3)
 
         assert spec.id == "sa-4"  # idx=3 -> sa-4
-        assert spec.role == "backend-engineer"
+        assert spec.role == "general-purpose"
         assert spec.task == ""
         assert spec.files == []
         assert spec.steps == []
@@ -484,9 +484,9 @@ class TestRoleDisplay:
     """Tests for _role_display helper."""
 
     def test_known_roles(self) -> None:
-        assert _role_display("backend-engineer") == "Backend Engineer"
+        assert _role_display("python-expert") == "Python Expert"
         assert _role_display("frontend-expert") == "Frontend Expert"
-        assert _role_display("qa-engineer") == "QA Engineer"
+        assert _role_display("backend-expert") == "Backend Expert"
 
     def test_unknown_role_titlecased(self) -> None:
         assert _role_display("data-scientist") == "Data Scientist"
@@ -504,7 +504,7 @@ class TestBuildFallbackPlan:
         result = _build_fallback_plan("PS-42", "Fallback test")
 
         assert result.startswith("---\n")
-        assert "issue: PS-42" in result
+        assert 'issue: "PS-42"' in result
         assert 'title: "Fallback test"' in result
         assert "subagents: []" in result
         assert "parsing error" in result

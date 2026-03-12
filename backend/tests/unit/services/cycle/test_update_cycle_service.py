@@ -80,7 +80,8 @@ class TestKgPopulateEnqueue:
 
         queue.enqueue.assert_called_once()
 
-    async def test_no_enqueue_on_date_only_change(self) -> None:
+    async def test_enqueues_on_date_only_change(self) -> None:
+        """Date changes are kg-relevant and should trigger enqueue."""
         from datetime import date
 
         queue = AsyncMock()
@@ -97,7 +98,8 @@ class TestKgPopulateEnqueue:
             )
         )
 
-        queue.enqueue.assert_not_called()
+        queue.enqueue.assert_called_once()
+        assert queue.enqueue.call_args[0][1]["entity_type"] == "cycle"
 
     async def test_no_enqueue_when_queue_is_none(self) -> None:
         repo = _make_cycle_repo()
