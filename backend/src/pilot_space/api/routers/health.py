@@ -21,8 +21,11 @@ from datetime import UTC, datetime
 import structlog
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-
-from pilot_space.infrastructure.health_checks import check_database, check_redis, check_supabase
+from pilot_space.infrastructure.health_checks import (
+    check_database,
+    check_redis,
+    check_supabase,
+)
 
 router = APIRouter(tags=["Health"])
 logger = structlog.get_logger(__name__)
@@ -107,9 +110,9 @@ async def readiness() -> dict[str, object]:
             content={
                 "type": "https://pilot.space/problems/service-unavailable",
                 "title": "Service Unavailable",
-                "status": 503,
                 "detail": "One or more critical dependencies are unreachable.",
                 **body,
+                "status": 503,
             },
             media_type="application/problem+json",
         )

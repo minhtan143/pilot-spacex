@@ -29,14 +29,15 @@ export const notesApi = {
     pageSize = 50
   ): Promise<PaginatedResponse<Note>> {
     const searchParams = new URLSearchParams();
-    searchParams.set('page', String(page));
-    searchParams.set('pageSize', String(pageSize));
+    const offset = (page - 1) * pageSize;
+    searchParams.set('cursor', String(offset));
+    searchParams.set('page_size', String(pageSize));
 
     for (const id of filters?.projectIds ?? []) {
       searchParams.append('project_ids', id);
     }
 
-    if (filters?.isPinned !== undefined) searchParams.set('is_pinned', String(filters.isPinned));
+    if (filters?.isPinned) searchParams.set('is_pinned', String(filters.isPinned));
     if (filters?.authorId) searchParams.set('author_id', filters.authorId);
     if (filters?.search) searchParams.set('search', filters.search);
 

@@ -482,6 +482,7 @@ async def move_workspace_note(
     from pilot_space.application.services.note.update_note_service import UpdateNotePayload
 
     workspace = await _resolve_workspace(workspace_id, workspace_repo)
+    await set_rls_context(session, current_user_id, workspace.id)
 
     note = await note_repo.get_by_id(note_id)
     if note is None or note.workspace_id != workspace.id:

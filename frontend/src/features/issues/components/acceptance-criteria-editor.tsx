@@ -196,14 +196,14 @@ export function AcceptanceCriteriaEditor({
 
       {items.length > 0 && (
         <ul className="space-y-1.5 mb-2" role="list">
-          {items.map((item) => (
+          {items.map((item, index) => (
             <li key={item.id} className="flex items-start gap-2 group">
               <Checkbox checked={false} disabled className="mt-1 shrink-0" aria-hidden="true" />
               <Input
                 value={item.text}
                 onChange={(e) => handleEditItem(item.id, e.target.value)}
                 className="h-8 text-sm flex-1 border-transparent hover:border-border focus:border-border bg-transparent"
-                aria-label={`Acceptance criterion ${items.indexOf(item) + 1}`}
+                aria-label={`Acceptance criterion ${index + 1}`}
               />
               <Button
                 variant="ghost"

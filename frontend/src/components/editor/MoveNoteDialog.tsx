@@ -67,15 +67,34 @@ export function MoveNoteDialog({
 
   // Keyboard-driven active index (separate from `selected` so arrow keys don't
   // change the committed selection until Enter/Space is pressed).
-  const [activeIndex, setActiveIndex] = useState<number>(() => {
+  //
+  // Instead of storing the raw index in state and syncing it via effects
+  // (which triggers cascading renders), we derive `activeIndex` each render
+  // from the natural base position (currentProjectId in optionIds) plus a
+  // keyboard offset the user has moved away from that base.
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+
+  // Base: position of currentProjectId (or 0 if not found / not yet loaded).
+  const baseIndex = useMemo(() => {
     const idx = optionIds.indexOf(currentProjectId ?? null);
     return idx >= 0 ? idx : 0;
-  });
+  }, [optionIds, currentProjectId]);
 
-  // Keep activeIndex in bounds when the filtered list shrinks.
-  useEffect(() => {
-    setActiveIndex((prev) => Math.min(prev, Math.max(0, optionIds.length - 1)));
-  }, [optionIds.length]);
+  // Clamp to valid bounds every render — no effect needed.
+  const maxIndex = Math.max(0, optionIds.length - 1);
+  const activeIndex = Math.min(Math.max(0, baseIndex + keyboardOffset), maxIndex);
+
+  // Expose a stable setter so arrow-key handlers can adjust the offset.
+  const setActiveIndex = useCallback(
+    (updater: number | ((prev: number) => number)) => {
+      setKeyboardOffset((prevOffset) => {
+        const prevActive = Math.min(Math.max(0, baseIndex + prevOffset), maxIndex);
+        const nextActive = typeof updater === 'function' ? updater(prevActive) : updater;
+        return nextActive - baseIndex;
+      });
+    },
+    [baseIndex, maxIndex]
+  );
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -84,7 +103,7 @@ export function MoveNoteDialog({
   const listboxId = useId();
   const activeOptionId = useId();
 
-  // ── Focus return on unmount ────────────���─────────────────────────────────
+  // ── Focus return on unmount ───────────────────────────────────
   // Capture the element that had focus before the dialog opened so we can
   // restore it when the dialog closes.
   useEffect(() => {
@@ -151,7 +170,7 @@ export function MoveNoteDialog({
           break;
       }
     },
-    [optionIds, activeIndex]
+    [optionIds, activeIndex, setActiveIndex]
   );
 
   return (
@@ -222,7 +241,10 @@ export function MoveNoteDialog({
                 role="option"
                 aria-selected={isSelected}
                 tabIndex={isActive ? 0 : -1}
-                onClick={() => { setSelected(null); setActiveIndex(idx); }}
+                onClick={() => {
+                  setSelected(null);
+                  setActiveIndex(idx);
+                }}
                 onFocus={() => setActiveIndex(idx)}
                 className={cn(
                   'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer select-none',
@@ -263,7 +285,10 @@ export function MoveNoteDialog({
                   role="option"
                   aria-selected={isSelected}
                   tabIndex={isActive ? 0 : -1}
-                  onClick={() => { setSelected(project.id); setActiveIndex(idx); }}
+                  onClick={() => {
+                    setSelected(project.id);
+                    setActiveIndex(idx);
+                  }}
                   onFocus={() => setActiveIndex(idx)}
                   className={cn(
                     'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer select-none',

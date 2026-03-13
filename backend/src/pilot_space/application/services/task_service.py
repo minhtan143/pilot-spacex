@@ -447,9 +447,11 @@ class TaskService:
         if issue.workspace_id != workspace_id:
             raise ValueError("Issue does not belong to workspace")
 
-        # Pre-fetch current task count once to determine starting sort_order
+        # Pre-fetch existing tasks to determine starting sort_order.
+        # Use the persisted maximum sort_order so gaps from deletions/reorders
+        # are not reused (len(existing) would be wrong after any gap).
         existing = await self._task_repo.list_by_issue(issue_id)
-        next_order = len(existing)
+        next_order = max((t.sort_order for t in existing), default=-1) + 1
 
         tasks_to_create: list[Task] = []
 
