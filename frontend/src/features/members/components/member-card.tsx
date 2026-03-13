@@ -178,10 +178,12 @@ export function MemberCard({
           {isCurrentUser && <span className="ml-1 text-muted-foreground font-normal">(you)</span>}
         </p>
 
-        {/* Email */}
-        <p className="text-center text-xs text-muted-foreground truncate max-w-full">
-          {member.email}
-        </p>
+        {/* Email — only show when we have a real display name, otherwise name already shows email-derived text */}
+        {member.fullName && (
+          <p className="text-center text-xs text-muted-foreground truncate max-w-full">
+            {member.email}
+          </p>
+        )}
 
         {/* Meta row */}
         <p className="text-center text-xs text-muted-foreground mt-1" data-testid="member-meta">
