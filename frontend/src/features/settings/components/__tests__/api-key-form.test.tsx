@@ -25,6 +25,7 @@ const mockSettings = {
   isSaving: false,
   error: null as string | null,
   saveSettings: vi.fn(),
+  validationErrors: {} as Record<string, string>,
 };
 
 vi.mock('@/stores', () => ({
