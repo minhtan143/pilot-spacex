@@ -47,14 +47,15 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Rename invitation_status enum labels back to lowercase."""
-    # Restore server_default first (before enum values change).
-    op.execute(
-        "ALTER TABLE workspace_invitations "
-        "ALTER COLUMN status SET DEFAULT 'pending'::invitation_status"
-    )
-
-    # Rename each enum value back to lowercase.
+    # Rename each enum value back to lowercase first, so the label 'pending'
+    # exists before the column default references it.
     op.execute("ALTER TYPE invitation_status RENAME VALUE 'PENDING'   TO 'pending'")
     op.execute("ALTER TYPE invitation_status RENAME VALUE 'ACCEPTED'  TO 'accepted'")
     op.execute("ALTER TYPE invitation_status RENAME VALUE 'EXPIRED'   TO 'expired'")
     op.execute("ALTER TYPE invitation_status RENAME VALUE 'CANCELLED' TO 'cancelled'")
+
+    # Restore server_default after the lowercase labels exist.
+    op.execute(
+        "ALTER TABLE workspace_invitations "
+        "ALTER COLUMN status SET DEFAULT 'pending'::invitation_status"
+    )

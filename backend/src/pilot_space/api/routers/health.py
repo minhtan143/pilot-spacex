@@ -21,7 +21,6 @@ from datetime import UTC, datetime
 import structlog
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-
 from pilot_space.infrastructure.health_checks import (
     check_database,
     check_redis,
@@ -48,8 +47,8 @@ async def liveness() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/health/ready")
-@router.get("/health")
+@router.get("/health/ready", response_model=None)
+@router.get("/health", response_model=None)
 async def readiness() -> dict[str, object] | JSONResponse:
     """Deep readiness probe — checks all dependencies in parallel.
 
