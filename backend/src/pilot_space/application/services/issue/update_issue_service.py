@@ -73,8 +73,8 @@ class UpdateIssuePayload:
     sort_order: int | _Unchanged = UNCHANGED
     label_ids: list[UUID] | _Unchanged = UNCHANGED
 
-    # Acceptance criteria (list of plain-text strings)
-    acceptance_criteria: list[str] | None | _Unchanged = UNCHANGED
+    # Acceptance criteria (list of structured dicts matching JSONB model)
+    acceptance_criteria: list[dict[str, Any]] | None | _Unchanged = UNCHANGED
 
     # AI metadata update
     ai_metadata: dict[str, Any] | None | _Unchanged = UNCHANGED

@@ -50,7 +50,7 @@ async def liveness() -> dict[str, str]:
 
 @router.get("/health/ready")
 @router.get("/health")
-async def readiness() -> dict[str, object]:
+async def readiness() -> dict[str, object] | JSONResponse:
     """Deep readiness probe — checks all dependencies in parallel.
 
     /health is kept as a backward-compatible alias for /health/ready.

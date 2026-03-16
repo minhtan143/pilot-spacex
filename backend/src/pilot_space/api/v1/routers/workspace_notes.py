@@ -10,6 +10,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Path, Query, Response, status
+from fastapi.responses import JSONResponse
 
 from pilot_space.api.middleware import create_problem_response
 from pilot_space.api.v1.dependencies import (
@@ -26,12 +27,12 @@ from pilot_space.api.v1.dependencies import (
     UpdateNoteServiceDep,
     WorkspaceRepositoryDep,
 )
-from pilot_space.api.v1.routers.ai_annotations import AnnotationResponse
 from pilot_space.api.v1.routers.workspace_quota import (
     _check_storage_quota,  # pyright: ignore[reportPrivateUsage]
     _update_storage_usage,  # pyright: ignore[reportPrivateUsage]
 )
 from pilot_space.api.v1.schemas.annotation import (
+    AnnotationResponse,
     AnnotationStatus,
     AnnotationStatusUpdate,
     AnnotationType,
@@ -479,7 +480,7 @@ async def move_workspace_note(
     workspace_repo: WorkspaceRepositoryDep,
     note_repo: NoteRepositoryDep,
     project_repo: ProjectRepositoryDep,
-) -> NoteResponse:
+) -> NoteResponse | JSONResponse:
     """Move a note to a different project or root workspace.
 
     Pass project_id=null to remove project association (move to root workspace).
