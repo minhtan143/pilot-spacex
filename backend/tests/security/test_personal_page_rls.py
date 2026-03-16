@@ -14,10 +14,11 @@ import uuid
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import select
+
 from pilot_space.infrastructure.database.models.note import Note
 from pilot_space.infrastructure.database.models.workspace_member import WorkspaceMember
 from pilot_space.infrastructure.database.rls import set_rls_context
-from sqlalchemy import select
 
 from .conftest import SecurityTestContext
 
@@ -139,9 +140,7 @@ class TestPersonalPageWorkspaceScope:
         rows = result.scalars().all()
 
         # Assert: RLS blocks access because membership is soft-deleted
-        assert (
-            len(rows) == 0
-        ), "Removed member should NOT see personal pages in former workspace"
+        assert len(rows) == 0, "Removed member should NOT see personal pages in former workspace"
 
     @pytest.mark.asyncio
     async def test_other_user_cannot_see_personal_page(
@@ -172,9 +171,7 @@ class TestPersonalPageWorkspaceScope:
             )
         )
         rows = result.scalars().all()
-        assert (
-            len(rows) == 0
-        ), "Other members should NOT see someone else's personal pages"
+        assert len(rows) == 0, "Other members should NOT see someone else's personal pages"
 
     @pytest.mark.asyncio
     async def test_outsider_cannot_access_personal_page(
@@ -200,9 +197,9 @@ class TestPersonalPageWorkspaceScope:
 
         result = await db_session.execute(select(Note).where(Note.project_id.is_(None)))
         rows = result.scalars().all()
-        assert (
-            len(rows) == 0
-        ), "Outsider should have zero access to personal pages in other workspace"
+        assert len(rows) == 0, (
+            "Outsider should have zero access to personal pages in other workspace"
+        )
 
     @pytest.mark.asyncio
     async def test_cross_workspace_personal_page_isolation(
@@ -229,6 +226,6 @@ class TestPersonalPageWorkspaceScope:
 
         result = await db_session.execute(select(Note).where(Note.project_id.is_(None)))
         rows = result.scalars().all()
-        assert (
-            len(rows) == 0
-        ), "Personal pages from workspace B should not be visible in workspace A"
+        assert len(rows) == 0, (
+            "Personal pages from workspace B should not be visible in workspace A"
+        )
