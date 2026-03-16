@@ -5,7 +5,7 @@
  *
  * Renders three sections:
  *   Project     — pill linking to the project page
- *   Notes       — noteLinks grouped by CREATED / EXTRACTED / REFERENCED
+ *   Notes       — noteLinks grouped by extracted / referenced / related / inline
  *   Relations   — issue-to-issue links (blocks / blocked_by / duplicates / related)
  *
  * Presentational component: receives `relations` and `relationsLoading` as props
@@ -26,9 +26,10 @@ import type { Issue, IssueRelation, NoteIssueLink } from '@/types';
 const COLLAPSE_THRESHOLD = 3;
 
 const NOTE_LINK_TYPE_LABEL: Record<NoteIssueLink['linkType'], string> = {
-  CREATED: 'Created from',
-  EXTRACTED: 'Extracted from',
-  REFERENCED: 'Referenced in',
+  extracted: 'Extracted from',
+  referenced: 'Referenced in',
+  related: 'Related to',
+  inline: 'Inline in',
 };
 
 // Map IssueRelation.linkType → IssueReferenceCard relationType

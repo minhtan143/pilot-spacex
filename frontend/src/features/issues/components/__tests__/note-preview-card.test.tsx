@@ -31,7 +31,7 @@ import { NotePreviewCard } from '../note-preview-card';
 const BASE_PROPS = {
   noteId: 'note-abc',
   noteTitle: 'My test note',
-  linkType: 'EXTRACTED' as const,
+  linkType: 'extracted' as const,
   workspaceSlug: 'my-workspace',
 };
 
@@ -79,19 +79,24 @@ describe('NotePreviewCard', () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it('shows badge text "Extracted" for linkType EXTRACTED', () => {
-    render(<NotePreviewCard {...BASE_PROPS} linkType="EXTRACTED" />);
+  it('shows badge text "Extracted" for linkType extracted', () => {
+    render(<NotePreviewCard {...BASE_PROPS} linkType="extracted" />);
     expect(screen.getByText('Extracted')).toBeInTheDocument();
   });
 
-  it('shows badge text "Created" for linkType CREATED', () => {
-    render(<NotePreviewCard {...BASE_PROPS} linkType="CREATED" />);
-    expect(screen.getByText('Created')).toBeInTheDocument();
+  it('shows badge text "Related" for linkType related', () => {
+    render(<NotePreviewCard {...BASE_PROPS} linkType="related" />);
+    expect(screen.getByText('Related')).toBeInTheDocument();
   });
 
-  it('shows badge text "Referenced" for linkType REFERENCED', () => {
-    render(<NotePreviewCard {...BASE_PROPS} linkType="REFERENCED" />);
+  it('shows badge text "Referenced" for linkType referenced', () => {
+    render(<NotePreviewCard {...BASE_PROPS} linkType="referenced" />);
     expect(screen.getByText('Referenced')).toBeInTheDocument();
+  });
+
+  it('shows badge text "Inline" for linkType inline', () => {
+    render(<NotePreviewCard {...BASE_PROPS} linkType="inline" />);
+    expect(screen.getByText('Inline')).toBeInTheDocument();
   });
 
   it('uses workspaceSlug and noteId in the pushed path', () => {
@@ -99,7 +104,7 @@ describe('NotePreviewCard', () => {
       <NotePreviewCard
         noteId="note-xyz"
         noteTitle="Another note"
-        linkType="CREATED"
+        linkType="related"
         workspaceSlug="other-slug"
       />
     );
