@@ -7,19 +7,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useRouter, useParams } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { FileX, ArrowLeft } from 'lucide-react';
-import { toast } from 'sonner';
-
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { NoteCanvas } from '@/components/editor/NoteCanvas';
 import { PageBreadcrumb } from '@/components/editor/PageBreadcrumb';
 import { VersionHistoryPanel, type NoteVersion } from '@/components/editor/VersionHistoryPanel';
 import { useNote, useUpdateNote, useAutoSave, useProjectPageTree } from '@/features/notes/hooks';
-import { projectTreeKeys } from '@/features/notes/hooks/useProjectPageTree';
-import { personalPagesKeys } from '@/features/notes/hooks/usePersonalPages';
 import { useDeleteNote } from '@/features/notes/hooks/useDeleteNote';
 import { useTogglePin } from '@/hooks/useTogglePin';
 import { useNoteVersions, useRestoreNoteVersion } from '@/hooks/useNoteVersions';
@@ -373,24 +368,6 @@ const NoteDetailPage = observer(function NoteDetailPage() {
     setShowVersionHistory((prev) => !prev);
   }, []);
 
-  // Handle emoji update — immediate (not debounced), invalidates tree cache so sidebar refreshes
-  const handleEmojiChange = useCallback(
-    (emoji: string | null) => {
-      updateNote.mutate({ iconEmoji: emoji });
-      // Invalidate the page tree so the sidebar emoji updates immediately
-      if (note?.projectId) {
-        void queryClient.invalidateQueries({
-          queryKey: projectTreeKeys.tree(workspaceId, note.projectId),
-        });
-      } else {
-        void queryClient.invalidateQueries({
-          queryKey: personalPagesKeys.all,
-        });
-      }
-    },
-    [updateNote, queryClient, workspaceId, note?.projectId]
-  );
-
   // Handle version restore
   const handleRestoreVersion = useCallback(
     async (version: NoteVersion) => {
@@ -453,7 +430,6 @@ const NoteDetailPage = observer(function NoteDetailPage() {
           projectId={note.projectId}
           linkedIssues={note.linkedIssues}
           iconEmoji={note.iconEmoji}
-          onEmojiChange={handleEmojiChange}
         />
 
         {/* Version History Panel - slides in from right */}
