@@ -58,7 +58,8 @@ class ConversationExtractionPayload:
         workspace_id: Owning workspace for all extracted nodes.
         user_id: Optional user whose conversation produced the messages.
         issue_id: Optional issue context UUID for this conversation.
-        api_key: Anthropic API key. None → skip extraction (BYOK pattern).
+        api_key: LLM API key. None → skip extraction (BYOK pattern).
+        base_url: Optional base URL for Anthropic-compatible providers (e.g., Ollama).
     """
 
     messages: list[dict[str, str]]
@@ -66,6 +67,8 @@ class ConversationExtractionPayload:
     user_id: UUID | None = None
     issue_id: UUID | None = None
     api_key: str | None = None
+    base_url: str | None = None
+    model_name: str | None = None
 
 
 @dataclass
@@ -139,10 +142,46 @@ def _build_prompt(messages: list[dict[str, str]]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _extract_json_object(text: str) -> str | None:
+    """Find the first top-level JSON object in text by brace matching.
+
+    Handles cases where LLM wraps JSON in prose or markdown.
+    Returns the JSON substring, or None if no balanced braces found.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
 def _parse_llm_response(raw: str) -> dict[str, Any]:
     """Parse raw LLM response into a structured dict.
 
     Strips markdown code fences if present, then JSON-parses the result.
+    Falls back to extracting the first JSON object from prose if direct
+    parsing fails (handles non-Anthropic providers wrapping JSON in text).
     Returns an empty dict on any parse failure.
 
     Args:
@@ -152,12 +191,17 @@ def _parse_llm_response(raw: str) -> dict[str, Any]:
         Parsed dict or {} on failure.
     """
     text = raw.strip()
+    if not text:
+        return {}
     # Strip ```json ... ``` or ``` ... ``` fences
     if text.startswith("```"):
         lines = text.splitlines()
         # Remove first and last fence lines
         inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
-        text = "\n".join(inner)
+        text = "\n".join(inner).strip()
+    if not text:
+        logger.warning("GraphExtractionService: empty content after stripping code fences")
+        return {}
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
@@ -165,11 +209,23 @@ def _parse_llm_response(raw: str) -> dict[str, Any]:
         logger.warning("GraphExtractionService: LLM returned non-dict JSON — ignoring")
         return {}
     except json.JSONDecodeError:
-        logger.warning(
-            "GraphExtractionService: failed to parse LLM response as JSON",
-            exc_info=True,
-        )
-        return {}
+        pass
+
+    # Fallback: extract first JSON object from prose (non-Anthropic providers
+    # sometimes wrap the JSON in explanatory text).
+    extracted = _extract_json_object(text)
+    if extracted:
+        try:
+            parsed = json.loads(extracted)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    logger.warning(
+        "GraphExtractionService: failed to parse LLM response as JSON",
+    )
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +382,9 @@ class GraphExtractionService:
             logger.debug("GraphExtractionService: empty messages list — returning empty result")
             return _empty_result()
 
-        raw_response = await self._call_llm(payload.api_key, payload.messages)
+        raw_response = await self._call_llm(
+            payload.api_key, payload.messages, payload.base_url, payload.model_name
+        )
         if raw_response is None:
             return _empty_result()
 
@@ -340,12 +398,20 @@ class GraphExtractionService:
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def _call_llm(self, api_key: str, messages: list[dict[str, str]]) -> str | None:
-        """Call Anthropic Claude Haiku for extraction.
+    async def _call_llm(
+        self,
+        api_key: str,
+        messages: list[dict[str, str]],
+        base_url: str | None = None,
+        model_name: str | None = None,
+    ) -> str | None:
+        """Call LLM for extraction via Anthropic-compatible API.
 
         Args:
-            api_key: Anthropic API key.
+            api_key: LLM API key.
             messages: Conversation messages.
+            base_url: Optional base URL for Anthropic-compatible providers.
+            model_name: Model to use. Falls back to _EXTRACTION_MODEL.
 
         Returns:
             Raw LLM response text, or None on failure.
@@ -354,18 +420,26 @@ class GraphExtractionService:
             import anthropic  # type: ignore[import-untyped]
 
             prompt = _build_prompt(messages)
-            client = anthropic.AsyncAnthropic(api_key=api_key)
+            client = anthropic.AsyncAnthropic(
+                api_key=api_key,
+                base_url=base_url or None,
+            )
             message = await client.messages.create(
-                model=_EXTRACTION_MODEL,
+                model=model_name or _EXTRACTION_MODEL,
                 max_tokens=_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
             )
-            # Extract text from the first content block (safe for all block union types)
+            # Extract text or thinking blocks (some providers return thinking only)
             if message.content:
-                first_block = message.content[0]
-                text_val = getattr(first_block, "text", None)
-                if text_val is not None:
-                    return str(text_val)
+                for block in message.content:
+                    text_val = getattr(block, "text", None)
+                    if text_val and str(text_val).strip():
+                        return str(text_val).strip()
+                # Fallback to thinking blocks
+                for block in message.content:
+                    thinking_val = getattr(block, "thinking", None)
+                    if thinking_val and str(thinking_val).strip():
+                        return str(thinking_val).strip()
             return None
         except Exception:
             logger.warning(
