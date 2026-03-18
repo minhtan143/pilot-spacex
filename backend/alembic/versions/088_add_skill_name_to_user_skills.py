@@ -1,7 +1,7 @@
 """Add skill_name column to user_skills table.
 
-Revision ID: 088_add_skill_name_to_user_skills
-Revises: 087_drop_role_type_unique_constraint
+Revision ID: 088_add_skill_name
+Revises: 087_drop_role_type_uq
 Create Date: 2026-03-17
 
 Stores the user-visible name for a skill (AI-suggested or user-edited).
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "088_add_skill_name_to_user_skills"
-down_revision: str = "087_drop_role_type_unique_constraint"
+revision: str = "088_add_skill_name"
+down_revision: str = "087_drop_role_type_uq"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

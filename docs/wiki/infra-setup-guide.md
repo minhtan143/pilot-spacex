@@ -435,14 +435,6 @@ Backend logs `redis_connect_failed — running in degraded mode`. This is non-fa
 docker run -d --name pilot-redis -p 6379:6379 redis:7-alpine
 ```
 
-### Alembic varchar(32) Truncation
-
-Revision IDs like `087_drop_role_type_unique_constraint` exceed the default 32-char `alembic_version.version_num` column. The `env.py` sets `version_num_col_type=String(128)`, but if the table was already created with the default, you must manually widen it:
-
-```sql
-ALTER TABLE alembic_version ALTER COLUMN version_num TYPE varchar(128);
-```
-
 ---
 
 ## Service Dependency Graph

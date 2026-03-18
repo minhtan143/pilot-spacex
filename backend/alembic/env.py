@@ -55,6 +55,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
         compare_server_default=True,
+        version_table="alembic_version",
         version_num_col_type=String(128),
     )
 
@@ -69,8 +70,7 @@ def do_run_migrations(connection: Connection) -> None:
         target_metadata=target_metadata,
         compare_type=True,
         compare_server_default=True,
-        # Revision IDs use descriptive names (e.g. "036_fix_ai_sessions_rls_enum_case")
-        # that exceed Alembic's default alembic_version.version_num VARCHAR(32).
+        version_table="alembic_version",
         version_num_col_type=String(128),
     )
 

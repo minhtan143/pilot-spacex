@@ -1,6 +1,6 @@
 """Drop role_type unique constraint on user_role_skills.
 
-Revision ID: 087_drop_role_type_unique_constraint
+Revision ID: 087_drop_role_type_uq
 Revises: 086_fix_invitation_status_enum
 Create Date: 2026-03-16
 
@@ -13,7 +13,7 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "087_drop_role_type_unique_constraint"
+revision: str = "087_drop_role_type_uq"
 down_revision: str = "086_fix_invitation_status_enum"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

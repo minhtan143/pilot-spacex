@@ -1,7 +1,7 @@
 """Add non-unique index on user_role_skills(user_id, workspace_id, role_type).
 
-Revision ID: 089_add_role_type_nonunique_index
-Revises: 088_add_skill_name_to_user_skills
+Revision ID: 089_add_role_type_idx
+Revises: 088_add_skill_name
 Create Date: 2026-03-17
 
 Migration 087 dropped the unique constraint but forgot to create
@@ -12,8 +12,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "089_add_role_type_nonunique_index"
-down_revision: str = "088_add_skill_name_to_user_skills"
+revision: str = "089_add_role_type_idx"
+down_revision: str = "088_add_skill_name"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
