@@ -15,6 +15,14 @@
 # =============================================================================
 
 ARG PYTHON_VERSION=3.12
+# Node LTS version used for npx (stdio MCP servers)
+ARG NODE_VERSION=22
+
+# =============================================================================
+# NODE SUPPLIER - Provides node/npm/npx binaries for later stages
+# =============================================================================
+FROM node:${NODE_VERSION}-slim AS node-supplier
+# Nothing else needed — we only COPY from this stage
 
 # =============================================================================
 # BASE STAGE - Common setup for all stages
@@ -23,7 +31,7 @@ FROM python:${PYTHON_VERSION}-slim AS base
 
 # Venv lives at a fixed path so every stage can reference it consistently
 ENV VIRTUAL_ENV=/app/.venv \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:/usr/local/bin:$PATH"
 
 # Prevent Python from writing bytecode and buffering stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -50,8 +58,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Install uv package manager (faster than pip)
-RUN pip install --no-cache-dir uv
+# Install uv + uvx from the official Astral distribution.
+# Using COPY --from instead of pip install so that both `uv` and `uvx` are
+# available as separate binaries (pip install uv only ships `uv`).
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+# Copy Node.js runtime (node + npm + npx) for stdio MCP servers that use npx.
+# We only need the binaries and their shared libs — not the full npm registry.
+COPY --from=node-supplier /usr/local/bin/node   /usr/local/bin/node
+COPY --from=node-supplier /usr/local/bin/npm    /usr/local/bin/npm
+COPY --from=node-supplier /usr/local/bin/npx    /usr/local/bin/npx
+COPY --from=node-supplier /usr/local/lib/node_modules /usr/local/lib/node_modules
 
 # Pre-create the venv so uv always installs into it
 RUN uv venv /app/.venv
@@ -125,7 +142,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     WORKERS=1 \
     # Use the venv from builder
     VIRTUAL_ENV=/app/.venv \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:/usr/local/bin:$PATH"
 
 WORKDIR /app
 
@@ -137,6 +154,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxmlsec1 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# uv + uvx (for uvx-based stdio MCP servers)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+# Node.js runtime (node + npm + npx) for npx-based stdio MCP servers
+COPY --from=node-supplier /usr/local/bin/node   /usr/local/bin/node
+COPY --from=node-supplier /usr/local/bin/npm    /usr/local/bin/npm
+COPY --from=node-supplier /usr/local/bin/npx    /usr/local/bin/npx
+COPY --from=node-supplier /usr/local/lib/node_modules /usr/local/lib/node_modules
 
 # Create non-root user for security
 RUN groupadd --gid 1000 appgroup \
