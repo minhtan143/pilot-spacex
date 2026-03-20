@@ -72,23 +72,18 @@ async def _get_admin_workspace(
     Raises:
         HTTPException: If workspace not found or user not admin.
     """
+    from pilot_space.infrastructure.database.models.workspace_member import WorkspaceRole
+
     workspace_repo = WorkspaceRepository(session=session)
-    workspace = await workspace_repo.get_with_members(workspace_id)
+    workspace = await workspace_repo.get_by_id(workspace_id)
     if not workspace:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Workspace not found",
         )
 
-    member = next(
-        (
-            m
-            for m in (workspace.members or [])
-            if m.user_id == current_user.user_id and not m.is_deleted
-        ),
-        None,
-    )
-    if not member or not member.is_admin:
+    role = await workspace_repo.get_member_role(workspace_id, current_user.user_id)
+    if role not in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN):
         # SEC-M1: Return 404 for both missing workspace and non-admin to avoid
         # workspace existence enumeration via 404/403 distinction.
         raise HTTPException(

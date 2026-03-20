@@ -49,19 +49,17 @@ async def _get_member_workspace(
     session: DbSession,
 ) -> Workspace:
     """Resolve workspace and verify the user is a member (any role)."""
+    from pilot_space.infrastructure.database.models.workspace_member import WorkspaceRole
+
     workspace_repo = WorkspaceRepository(session=session)
-    workspace = await workspace_repo.get_with_members(workspace_id)
+    workspace = await workspace_repo.get_by_id(workspace_id)
     if not workspace:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Workspace not found",
         )
 
-    member = next(
-        (m for m in (workspace.members or []) if m.user_id == current_user.user_id),
-        None,
-    )
-    if not member:
+    if not await workspace_repo.is_member(workspace_id, current_user.user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not a member of this workspace",
@@ -76,19 +74,18 @@ async def _get_admin_workspace(
     session: DbSession,
 ) -> Workspace:
     """Resolve workspace and verify admin/owner access."""
+    from pilot_space.infrastructure.database.models.workspace_member import WorkspaceRole
+
     workspace_repo = WorkspaceRepository(session=session)
-    workspace = await workspace_repo.get_with_members(workspace_id)
+    workspace = await workspace_repo.get_by_id(workspace_id)
     if not workspace:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Workspace not found",
         )
 
-    member = next(
-        (m for m in (workspace.members or []) if m.user_id == current_user.user_id),
-        None,
-    )
-    if not member or not member.is_admin:
+    role = await workspace_repo.get_member_role(workspace_id, current_user.user_id)
+    if role not in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin role required",
