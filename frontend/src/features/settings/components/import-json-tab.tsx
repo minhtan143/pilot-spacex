@@ -18,7 +18,7 @@ interface DetectedServer {
   name: string;
   url_or_command: string;
   transport: string;
-  type: 'remote' | 'npx' | 'uvx';
+  type: 'remote' | 'command' | 'npx' | 'uvx';
 }
 
 interface ImportJsonTabProps {
@@ -47,9 +47,9 @@ function parseConfigJson(raw: string): DetectedServer[] {
 
     if (typeof config.command === 'string') {
       const cmd = config.command as string;
-      if (cmd.startsWith('npx') || cmd.includes('npx')) type = 'npx';
-      else if (cmd.startsWith('uvx') || cmd.includes('uvx')) type = 'uvx';
-      else type = 'npx'; // default for command-based
+      if (cmd.startsWith('npx') || cmd.includes('npx')) type = 'command';
+      else if (cmd.startsWith('uvx') || cmd.includes('uvx')) type = 'command';
+      else type = 'command'; // default for command-based
       urlOrCommand = cmd;
       transport = 'stdio';
     } else if (typeof config.url === 'string') {
@@ -80,6 +80,7 @@ const PLACEHOLDER = `{
 
 const TYPE_ICON: Record<string, React.ReactNode> = {
   remote: <Globe className="h-4 w-4" />,
+  command: <Terminal className="h-4 w-4" />,
   npx: <Terminal className="h-4 w-4" />,
   uvx: <Code2 className="h-4 w-4" />,
 };

@@ -49,12 +49,14 @@ interface MCPServersTableProps {
 
 const SERVER_TYPE_ICON: Record<McpServerType, React.ReactNode> = {
   remote: <Globe className="h-4 w-4" />,
+  command: <Terminal className="h-4 w-4" />,
   npx: <Terminal className="h-4 w-4" />,
   uvx: <Code2 className="h-4 w-4" />,
 };
 
 const SERVER_TYPE_LABEL: Record<McpServerType, string> = {
   remote: 'Remote',
+  command: 'Command',
   npx: 'Command',
   uvx: 'Command',
 };
@@ -103,7 +105,7 @@ export function MCPServersTable({
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
             <SelectItem value="remote">Remote</SelectItem>
-            <SelectItem value="npx">Command</SelectItem>
+            <SelectItem value="command">Command</SelectItem>
           </SelectContent>
         </Select>
 

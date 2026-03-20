@@ -764,7 +764,7 @@ def _build_server_config(
             return McpHttpServerConfig(type="http", url=url, headers=headers) if headers else McpHttpServerConfig(type="http", url=url)
         return McpSSEServerConfig(type="sse", url=url, headers=headers) if headers else McpSSEServerConfig(type="sse", url=url)
 
-    # NPX/UVX — build McpStdioServerConfig
+    # Command (COMMAND / legacy NPX / UVX) — build McpStdioServerConfig
     command_str = server.url_or_command
     if not command_str:
         return None

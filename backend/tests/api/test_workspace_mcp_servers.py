@@ -942,7 +942,7 @@ async def test_response_never_contains_raw_secrets(
     created_server.id = uuid4()
     created_server.workspace_id = workspace.id
     created_server.display_name = "Secret Test Server"
-    created_server.server_type = McpServerType.NPX
+    created_server.server_type = McpServerType.COMMAND
     created_server.transport = McpTransport.STDIO
     created_server.url_or_command = "npx my-secret-server"
     created_server.url = "npx my-secret-server"
@@ -977,7 +977,7 @@ async def test_response_never_contains_raw_secrets(
 
     payload = {
         "display_name": "Secret Test Server",
-        "server_type": "npx",
+        "server_type": "command",
         "transport": "stdio",
         "url_or_command": "npx my-secret-server",
         "auth_type": "bearer",
@@ -1546,12 +1546,12 @@ def test_update_schema_accepts_valid_https_url_for_remote() -> None:
 
 
 def test_update_schema_accepts_valid_npx_command() -> None:
-    """PATCH with server_type=NPX and clean command passes schema validation."""
+    """PATCH with server_type=COMMAND and clean command passes schema validation."""
     from pilot_space.api.v1.routers._mcp_server_schemas import WorkspaceMcpServerUpdate
     from pilot_space.infrastructure.database.models.workspace_mcp_server import McpServerType
 
     body = WorkspaceMcpServerUpdate(
-        server_type=McpServerType.NPX,
+        server_type=McpServerType.COMMAND,
         url_or_command="@modelcontextprotocol/server-github",
     )
     assert body.url_or_command == "@modelcontextprotocol/server-github"
@@ -1564,9 +1564,9 @@ def test_update_schema_no_validation_when_url_or_command_omitted() -> None:
 
     # Only changing server_type — url_or_command not in body, so model_validator
     # leaves url_or_command=None; cross-field check happens in the route handler.
-    body = WorkspaceMcpServerUpdate(server_type=McpServerType.NPX)
+    body = WorkspaceMcpServerUpdate(server_type=McpServerType.COMMAND)
     assert body.url_or_command is None
-    assert body.server_type == McpServerType.NPX
+    assert body.server_type == McpServerType.COMMAND
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 /**
  * MCPServersStore - MobX observable store for workspace MCP server management.
  *
- * Phase 25: Extended for multi-type servers (Remote/NPX/UVX), 5-state status,
+ * Phase 25: Extended for multi-type servers (Remote/Command/NPX/UVX legacy), 5-state status,
  * bulk import, connection testing, and enable/disable toggling.
  */
 import { makeAutoObservable, runInAction, computed } from 'mobx';
@@ -11,7 +11,7 @@ import { mcpServersApi } from '@/services/api/mcp-servers';
 // Domain types
 // ============================================================
 
-export type McpServerType = 'remote' | 'npx' | 'uvx';
+export type McpServerType = 'remote' | 'command' | 'npx' | 'uvx';
 export type McpTransport = 'sse' | 'stdio' | 'streamable_http';
 export type McpStatus = 'enabled' | 'disabled' | 'unhealthy' | 'unreachable' | 'config_error';
 

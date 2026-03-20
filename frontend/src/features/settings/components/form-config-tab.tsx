@@ -279,7 +279,7 @@ export function FormConfigTab({ initialData, onSave, isSaving }: FormConfigTabPr
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="remote">Remote Server</SelectItem>
-              <SelectItem value="npx">Command</SelectItem>
+              <SelectItem value="command">Command</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -298,7 +298,7 @@ export function FormConfigTab({ initialData, onSave, isSaving }: FormConfigTabPr
             placeholder={
               form.serverType === 'remote'
                 ? 'https://mcp.example.com/sse'
-                : 'npx, uvx ...'
+                : 'npx my-server, uvx my-tool ...'
             }
             disabled={isSaving}
             required

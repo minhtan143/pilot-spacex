@@ -55,7 +55,7 @@ _SHELL_METACHAR_ARGS_RE = re.compile(r"[;&|`(){}<>]")
 class WorkspaceMcpServerCreate(BaseModel):
     """Request body for registering a new MCP server.
 
-    Supports all three server types (remote, npx, uvx) with appropriate
+    Supports all server types (remote, command; legacy: npx, uvx) with appropriate
     validation rules for each type.
     """
 
@@ -71,7 +71,7 @@ class WorkspaceMcpServerCreate(BaseModel):
     # Phase 25 primary fields
     server_type: McpServerType = Field(
         default=McpServerType.REMOTE,
-        description="Server type: remote, npx, or uvx",
+        description="Server type: remote or command (legacy: npx, uvx)",
     )
     transport: McpTransport = Field(
         default=McpTransport.SSE,
@@ -80,12 +80,12 @@ class WorkspaceMcpServerCreate(BaseModel):
     url_or_command: str | None = Field(
         default=None,
         max_length=1024,
-        description="HTTPS URL for remote, or launch command for NPX/UVX",
+        description="HTTPS URL for remote, or launch command for command/npx/uvx",
     )
     command_args: str | None = Field(
         default=None,
         max_length=512,
-        description="Extra CLI arguments for NPX/UVX launch (npx/uvx only)",
+        description="Extra CLI arguments for command launch (command/npx/uvx only)",
     )
     headers: dict[str, str] | None = Field(
         default=None,
@@ -93,7 +93,7 @@ class WorkspaceMcpServerCreate(BaseModel):
     )
     env_vars: dict[str, str] | None = Field(
         default=None,
-        description="Environment variables for NPX/UVX launch (will be encrypted at rest)",
+        description="Environment variables for command/npx/uvx launch (will be encrypted at rest)",
     )
 
     # Auth fields
@@ -217,7 +217,7 @@ class WorkspaceMcpServerUpdate(BaseModel):
         Rules applied when url_or_command is provided:
         - Must not be an empty string.
         - If server_type is also provided in this request, validate the value
-          against the new type (SSRF check for REMOTE, injection check for NPX/UVX).
+          against the new type (SSRF check for REMOTE, injection check for COMMAND/NPX/UVX).
         - If server_type is NOT provided, we cannot know the stored type here;
           the route handler performs cross-field validation using the stored value.
         """
