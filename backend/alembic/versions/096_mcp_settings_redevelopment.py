@@ -1,6 +1,6 @@
 """MCP Settings Redevelopment — add server_type, transport, url_or_command, etc.
 
-Revision ID: 090_mcp_settings_redevelopment
+Revision ID: 096_mcp_settings_redevelopment
 Revises: 089_add_role_type_idx
 Create Date: 2026-03-20
 
@@ -44,8 +44,8 @@ from alembic import op
 from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
-revision: str = "090_mcp_settings_redevelopment"
-down_revision: str = "089_add_role_type_idx"
+revision: str = "096_mcp_settings_redevelopment"
+down_revision: str = "095_merge_heads"
 branch_labels: None = None
 depends_on: None = None
 
@@ -54,12 +54,8 @@ def upgrade() -> None:
     """Add new columns, enums, and migrate last_status from VARCHAR to enum."""
 
     # 1. Create the four new enum types (final shape — no interim values).
-    op.execute(
-        text("CREATE TYPE mcp_server_type AS ENUM ('remote', 'command')")
-    )
-    op.execute(
-        text("CREATE TYPE mcp_command_runner AS ENUM ('npx', 'uvx')")
-    )
+    op.execute(text("CREATE TYPE mcp_server_type AS ENUM ('remote', 'command')"))
+    op.execute(text("CREATE TYPE mcp_command_runner AS ENUM ('npx', 'uvx')"))
     op.execute(
         text("CREATE TYPE mcp_transport AS ENUM ('sse', 'stdio', 'streamable_http')")
     )
@@ -84,7 +80,9 @@ def upgrade() -> None:
         sa.Column(
             "transport",
             sa.Enum(
-                "sse", "stdio", "streamable_http",
+                "sse",
+                "stdio",
+                "streamable_http",
                 name="mcp_transport",
                 create_type=False,
             ),
@@ -242,9 +240,7 @@ def downgrade() -> None:
     op.drop_column("workspace_mcp_servers", "server_type")
 
     # 4. Restore url to VARCHAR(512) NOT NULL (backfill NULLs first).
-    op.execute(
-        text("UPDATE workspace_mcp_servers SET url = '' WHERE url IS NULL")
-    )
+    op.execute(text("UPDATE workspace_mcp_servers SET url = '' WHERE url IS NULL"))
     op.execute(
         text(
             "ALTER TABLE workspace_mcp_servers "

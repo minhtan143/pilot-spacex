@@ -268,10 +268,10 @@ export function FormConfigTab({ initialData, onSave, isSaving, formId }: FormCon
         ...(envVarsMap ? { env_vars: envVarsMap } : {}),
         ...(authType === 'oauth2'
           ? {
-              oauth_client_id: form.oauthClientId.trim() || null,
-              oauth_auth_url: form.oauthAuthUrl.trim() || null,
-              oauth_token_url: form.oauthTokenUrl.trim() || null,
-              oauth_scopes: form.oauthScopes.trim() || null,
+              oauth_client_id: form.oauthClientId.trim() || undefined,
+              oauth_auth_url: form.oauthAuthUrl.trim() || undefined,
+              oauth_token_url: form.oauthTokenUrl.trim() || undefined,
+              oauth_scopes: form.oauthScopes.trim() || undefined,
             }
           : {}),
       };
