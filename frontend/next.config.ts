@@ -2,6 +2,26 @@ import type { NextConfig } from 'next';
 
 const BACKEND_URL = process.env.BACKEND_URL ?? 'http://localhost:8000';
 
+// Derive Supabase origins from env var for CSP (supports localhost/custom domains)
+const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+let sbOrigin: string | null = null;
+let sbWsOrigin: string | null = null;
+
+if (sbUrl) {
+  try {
+    const parsed = new URL(sbUrl);
+    sbOrigin = parsed.origin;
+    sbWsOrigin =
+      parsed.protocol === 'https:'
+        ? `wss://${parsed.host}`
+        : parsed.protocol === 'http:'
+          ? `ws://${parsed.host}`
+          : null;
+  } catch {
+    // Ignore malformed env value — CSP falls back to *.supabase.co wildcards.
+  }
+}
+
 const nextConfig: NextConfig = {
   async rewrites() {
     return [
@@ -23,6 +43,35 @@ const nextConfig: NextConfig = {
         source: '/:slug/settings/members',
         destination: '/:slug/members',
         permanent: true,
+      },
+    ];
+  },
+
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            // frame-src: allow only youtube-nocookie and vimeo player iframes.
+            // 'self' preserves any same-origin iframe usage.
+            // youtube-nocookie.com: used by YoutubeExtension (nocookie: true config).
+            // player.vimeo.com: used by VimeoNode embed URLs.
+            value: [
+              "default-src 'self'",
+              // unsafe-inline required by Next.js for inline scripts; unsafe-eval only in dev (hot reload)
+              `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,
+              "style-src 'self' 'unsafe-inline'",
+              `img-src 'self' data: blob: https://*.supabase.co${sbOrigin ? ` ${sbOrigin}` : ''}`,
+              "font-src 'self'",
+              `connect-src 'self' https://*.supabase.co wss://*.supabase.co${sbOrigin ? ` ${sbOrigin}` : ''}${sbWsOrigin ? ` ${sbWsOrigin}` : ''}`,
+              "frame-src 'self' https://www.youtube-nocookie.com https://player.vimeo.com",
+              "object-src 'none'",
+              "base-uri 'self'",
+            ].join('; '),
+          },
+        ],
       },
     ];
   },
@@ -67,13 +116,28 @@ const nextConfig: NextConfig = {
       '@radix-ui/react-separator',
       '@radix-ui/react-slot',
       '@radix-ui/react-tooltip',
+      '@radix-ui/react-select',
+      '@radix-ui/react-tabs',
+      '@radix-ui/react-checkbox',
+      '@radix-ui/react-alert-dialog',
+      '@radix-ui/react-collapsible',
+      '@radix-ui/react-hover-card',
+      '@radix-ui/react-progress',
+      '@radix-ui/react-switch',
       'date-fns',
+      'motion',
+      'lowlight',
+      '@xyflow/react',
+      '@dnd-kit/core',
+      '@dnd-kit/sortable',
+      'cmdk',
       '@tiptap/core',
       '@tiptap/react',
       '@tiptap/pm',
       '@tiptap/starter-kit',
       '@tiptap/extension-placeholder',
       '@tiptap/extension-character-count',
+      '@tiptap/extension-youtube', // added for Phase 33 video embeds
       'recharts',
     ],
   },

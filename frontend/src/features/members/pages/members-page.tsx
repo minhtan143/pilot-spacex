@@ -1,8 +1,8 @@
 /**
- * MembersPage — Workspace members management with card grid layout.
+ * MembersPage — Workspace members management with list layout.
  *
  * Route: /[workspaceSlug]/members
- * Features: search, role filter, card grid, invite dialog, pending invitations tab.
+ * Features: search, role filter, vertical list, invite dialog, pending invitations tab.
  * Admin-only editing, read-only for non-admins.
  */
 
@@ -26,9 +26,13 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '@/stores';
 import type { WorkspaceRole } from '@/stores/WorkspaceStore';
-import { useWorkspaceMembers } from '@/features/issues/hooks/use-workspace-members';
+import {
+  useWorkspaceMembers,
+  workspaceMembersKeys,
+} from '@/features/issues/hooks/use-workspace-members';
 import { workspacesApi } from '@/services/api/workspaces';
 import {
   useWorkspaceInvitations,
@@ -41,9 +45,9 @@ import { ROLE_HIERARCHY } from '@/features/members/utils/member-utils';
 
 function MembersLoadingSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton key={i} className="h-[200px] w-full rounded-lg" />
+    <div className="space-y-2">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Skeleton key={i} className="h-16 w-full rounded-lg" />
       ))}
     </div>
   );
@@ -53,10 +57,16 @@ export const MembersPage = observer(function MembersPage() {
   const { authStore, workspaceStore } = useStore();
   const params = useParams();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const workspaceSlug = params?.workspaceSlug as string;
 
   const currentWorkspace = workspaceStore.getWorkspaceBySlug(workspaceSlug);
   const workspaceId = currentWorkspace?.id || workspaceSlug;
+
+  const refreshMembers = React.useCallback(
+    () => void queryClient.invalidateQueries({ queryKey: workspaceMembersKeys.all(workspaceId) }),
+    [queryClient, workspaceId]
+  );
   const currentUserId = authStore.user?.id ?? '';
 
   const isAdmin = workspaceStore.isAdmin;
@@ -133,23 +143,40 @@ export const MembersPage = observer(function MembersPage() {
     return invitations.filter((inv) => inv.status === 'pending');
   }, [invitations]);
 
-  const handleRoleChange = async (userId: string, role: WorkspaceRole) => {
+  const handleRoleChange = (userId: string, role: WorkspaceRole) => {
     const member = members?.find((m) => m.userId === userId);
     if (!member) return;
 
-    setUpdatingMemberId(userId);
-    const result = await workspaceStore.updateMemberRole(workspaceId, userId, role);
-    setUpdatingMemberId(null);
+    const displayName = member.fullName || member.email;
+    const currentRole = member.role;
 
-    if (result) {
-      toast.success('Role updated', {
-        description: `${member.fullName || member.email} is now a ${role}.`,
-      });
-    } else {
-      toast.error('Failed to update role', {
-        description: workspaceStore.error ?? 'An unexpected error occurred.',
-      });
-    }
+    // Skip confirmation if role hasn't changed
+    if (currentRole === role) return;
+
+    setConfirmDialog({
+      open: true,
+      title: 'Change member role',
+      description: `Change ${displayName}'s role from ${currentRole} to ${role}?`,
+      confirmLabel: 'Change Role',
+      variant: 'default',
+      onConfirm: async () => {
+        closeConfirmDialog();
+        setUpdatingMemberId(userId);
+        const result = await workspaceStore.updateMemberRole(workspaceId, userId, role);
+        setUpdatingMemberId(null);
+
+        if (result) {
+          refreshMembers();
+          toast.success('Role updated', {
+            description: `${displayName} is now a ${role}.`,
+          });
+        } else {
+          toast.error('Failed to update role', {
+            description: workspaceStore.error ?? 'An unexpected error occurred.',
+          });
+        }
+      },
+    });
   };
 
   const handleRemoveMember = (userId: string) => {
@@ -180,6 +207,7 @@ export const MembersPage = observer(function MembersPage() {
         setUpdatingMemberId(null);
 
         if (success) {
+          refreshMembers();
           toast.success('Member removed', {
             description: `${displayName} has been removed from the workspace.`,
           });
@@ -231,6 +259,7 @@ export const MembersPage = observer(function MembersPage() {
         setUpdatingMemberId(null);
 
         if (result) {
+          refreshMembers();
           toast.success('Ownership transferred', {
             description: `${displayName} is now the workspace owner.`,
           });
@@ -337,11 +366,7 @@ export const MembersPage = observer(function MembersPage() {
           )}
         </div>
       ) : (
-        <div
-          className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
-          role="list"
-          aria-label="Workspace members"
-        >
+        <div className="space-y-2" role="list" aria-label="Workspace members">
           {filteredMembers.map((member) => (
             <div key={member.userId} role="listitem">
               <MemberCard

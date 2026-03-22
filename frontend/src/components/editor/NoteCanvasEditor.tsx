@@ -34,6 +34,11 @@ import { useAIAutoScroll } from '@/hooks/useAIAutoScroll';
 import { useNoteHealth } from '@/hooks/useNoteHealth';
 import type { NoteHealthData } from '@/hooks/useNoteHealth';
 import { useEditorSync } from './hooks/useEditorSync';
+import {
+  useFileUploadRefs,
+  createDropHandler,
+  setupUploadListener,
+} from './hooks/useFileUploadHandlers';
 
 // H-6: Helper to update EntityHighlightExtension entities without recreating extensions.
 // Follows the pattern used by updateAIBlockProcessingStorage (functional/immutable-data rule).
@@ -118,6 +123,10 @@ export interface NoteCanvasProps {
     noteContent: Record<string, unknown>;
     selectedText?: string;
   }) => void;
+  /** Whether focus mode is active — hides chrome when true */
+  isFocusMode?: boolean;
+  /** Callback to toggle focus mode on/off */
+  onToggleFocusMode?: () => void;
 }
 
 /**
@@ -205,6 +214,9 @@ export function useNoteCanvasEditor(props: NoteCanvasProps): NoteCanvasEditorSta
     workspaceSlug = '',
     onTitleChange,
     onExtractIssues,
+    isFocusMode = false,
+    onToggleFocusMode,
+    projectId,
   } = props;
 
   const [editorError, setEditorError] = useState<string | null>(null);
@@ -239,6 +251,9 @@ export function useNoteCanvasEditor(props: NoteCanvasProps): NoteCanvasEditorSta
   // @see NoteDetailPage — expected sole consumer; must pre-resolve workspaceId before passing as prop.
   const isWorkspaceUUID = workspaceId ? /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(workspaceId) : false;
   const resolvedWorkspaceId = isWorkspaceUUID ? workspaceId : undefined;
+
+  // File upload refs — keeps workspaceId/projectId fresh for drop handler + slash commands
+  const uploadRefs = useFileUploadRefs(resolvedWorkspaceId, projectId, editorRef);
 
   // Set workspace context on PilotSpaceStore
   useEffect(() => {
@@ -446,6 +461,9 @@ export function useNoteCanvasEditor(props: NoteCanvasProps): NoteCanvasEditorSta
           'min-h-[calc(100vh-200px)]'
         ),
       },
+      handleDOMEvents: {
+        drop: createDropHandler(uploadRefs),
+      },
     },
     onUpdate: ({ editor: ed }) => {
       if (onChange) {
@@ -459,6 +477,7 @@ export function useNoteCanvasEditor(props: NoteCanvasProps): NoteCanvasEditorSta
       setEditorError(null);
       editorRef.current = ed;
       setIsEditorReady(true);
+      setupUploadListener(ed, uploadRefs);
     },
     onDestroy: () => {
       editorRef.current = null;
@@ -602,11 +621,22 @@ export function useNoteCanvasEditor(props: NoteCanvasProps): NoteCanvasEditorSta
           handleChatViewOpen();
         }
       }
+      // Cmd+Shift+F / Ctrl+Shift+F — toggle focus mode
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        onToggleFocusMode?.();
+      }
+      // Escape — exit focus mode (only when active, so we don't eat Escape from slash commands)
+      // Note: slash command handles Escape at ProseMirror level (before window), so this is safe
+      if (e.key === 'Escape' && isFocusMode) {
+        onToggleFocusMode?.();
+        // Do NOT call e.preventDefault() — let other Escape handlers chain normally
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isChatViewOpen, handleChatViewOpen, onSave]);
+  }, [isChatViewOpen, handleChatViewOpen, onSave, isFocusMode, onToggleFocusMode]);
 
   // Toggle ChatView panel size
   const handleChatPanelToggle = useCallback(() => {

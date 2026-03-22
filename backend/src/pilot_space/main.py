@@ -62,6 +62,7 @@ from pilot_space.api.v1.routers import (
     notifications_router,
     onboarding_router,
     pm_blocks_router,
+    project_artifacts_router,
     projects_router,
     related_issues_router,
     role_skills_router,
@@ -91,6 +92,8 @@ from pilot_space.api.v1.routers import (
 from pilot_space.api.v1.routers.skill_templates import (
     router as skill_templates_router,
 )
+from pilot_space.api.v1.routers.transcription import router as transcription_router
+from pilot_space.api.v1.routers.transcription_ws import router as transcription_ws_router
 from pilot_space.api.v1.routers.user_skills import router as user_skills_router
 from pilot_space.api.v1.routers.workspace_action_buttons import (
     router as workspace_action_buttons_router,
@@ -186,11 +189,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _anthropic_api_key: str | None = (
             _anthropic_secret.get_secret_value() if _anthropic_secret else None
         )
+        from pilot_space.infrastructure.storage.client import SupabaseStorageClient
+
         memory_worker = MemoryWorker(
             queue=queue_client,
             session_factory=session_factory,
             google_api_key=_google_api_key,
             anthropic_api_key=_anthropic_api_key,
+            storage_client=SupabaseStorageClient(),
         )
         memory_worker_task = asyncio.create_task(memory_worker.start())
 
@@ -303,6 +309,8 @@ if ai_annotations_router is not None:  # type: ignore[reportUnnecessaryCompariso
     app.include_router(ai_annotations_router, prefix=API_V1_PREFIX)
 app.include_router(ai_approvals_router, prefix=f"{API_V1_PREFIX}/ai")
 app.include_router(ai_attachments_router, prefix=f"{API_V1_PREFIX}/ai")
+app.include_router(transcription_router, prefix=f"{API_V1_PREFIX}/ai")
+app.include_router(transcription_ws_router, prefix=f"{API_V1_PREFIX}/ai")
 app.include_router(ai_drive_router, prefix=f"{API_V1_PREFIX}/ai")
 app.include_router(ai_chat_router, prefix=f"{API_V1_PREFIX}/ai")
 app.include_router(ai_configuration_router, prefix=API_V1_PREFIX)
@@ -351,6 +359,11 @@ app.include_router(knowledge_graph_projects_router, prefix=API_V1_PREFIX)
 app.include_router(memory_router, prefix=API_V1_PREFIX)
 app.include_router(pm_blocks_router, prefix=API_V1_PREFIX)
 app.include_router(dependency_graph_router, prefix=API_V1_PREFIX)
+app.include_router(
+    project_artifacts_router,
+    prefix=API_V1_PREFIX + "/workspaces/{workspace_id}/projects/{project_id}/artifacts",
+    tags=["artifacts"],
+)
 app.include_router(onboarding_router, prefix=API_V1_PREFIX)
 app.include_router(homepage_router, prefix=API_V1_PREFIX)
 app.include_router(homepage_notes_from_chat_router, prefix=API_V1_PREFIX)
@@ -361,3 +374,10 @@ app.include_router(skill_approvals_router, prefix=f"{API_V1_PREFIX}/workspaces")
 app.include_router(notifications_router, prefix=f"{API_V1_PREFIX}/workspaces")
 if debug_router:
     app.include_router(debug_router, prefix=API_V1_PREFIX)
+
+
+def cli() -> None:
+    """CLI entry point to run the FastAPI server."""
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

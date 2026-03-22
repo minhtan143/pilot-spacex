@@ -39,6 +39,7 @@ from pilot_space.infrastructure.database.models.ai_message import AIMessage, Mes
 from pilot_space.infrastructure.database.models.ai_session import AISession
 from pilot_space.infrastructure.database.models.ai_task import AITask, TaskStatus
 from pilot_space.infrastructure.database.models.ai_tool_call import AIToolCall, ToolCallStatus
+from pilot_space.infrastructure.database.models.artifact import Artifact
 from pilot_space.infrastructure.database.models.audit_log import ActorType, AuditLog
 from pilot_space.infrastructure.database.models.chat_attachment import ChatAttachment
 from pilot_space.infrastructure.database.models.custom_role import CustomRole
@@ -112,6 +113,7 @@ from pilot_space.infrastructure.database.models.threaded_discussion import (
     DiscussionStatus,
     ThreadedDiscussion,
 )
+from pilot_space.infrastructure.database.models.transcript_cache import TranscriptCache
 from pilot_space.infrastructure.database.models.user import User
 from pilot_space.infrastructure.database.models.user_role_skill import (
     RoleTemplate,
@@ -167,6 +169,7 @@ __all__ = [
     "AnnotationStatus",
     "AnnotationType",
     "ApprovalStatus",
+    "Artifact",
     "AuditLog",
     "Base",
     "BaseModel",
@@ -235,6 +238,7 @@ __all__ = [
     "ThreadedDiscussion",
     "TimestampMixin",
     "ToolCallStatus",
+    "TranscriptCache",
     "User",
     "UserRoleSkill",
     "UserSkill",

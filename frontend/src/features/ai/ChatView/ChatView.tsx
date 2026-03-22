@@ -28,6 +28,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Square, AlertCircle, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { FilePreviewModal } from '@/features/artifacts/components/FilePreviewModal';
+import { useAttachmentPreview } from './hooks/useAttachmentPreview';
 import type { PilotSpaceStore } from '@/stores/ai/PilotSpaceStore';
 import type { ApprovalStore } from '@/stores/ai/ApprovalStore';
 import { SessionListStore } from '@/stores/ai/SessionListStore';
@@ -97,6 +99,9 @@ const ChatViewInternal = observer<ChatViewProps>(
     const [scrollToBottomTrigger, setScrollToBottomTrigger] = useState(0);
     const prefersReducedMotion = useReducedMotion();
 
+    // Attachment preview — opens FilePreviewModal when AttachmentChip is clicked
+    const attachmentPreview = useAttachmentPreview();
+
     // Initialize SessionListStore (T075-T079)
     const [sessionListStore] = useState(() => new SessionListStore(store));
 
@@ -158,6 +163,12 @@ const ChatViewInternal = observer<ChatViewProps>(
       if (!noteId) {
         store.clearConversation();
         sessionListStore.fetchSessions();
+        return;
+      }
+
+      // If the store already has messages for the same note context (e.g. chat panel
+      // was closed and reopened), preserve the conversation instead of re-fetching.
+      if (previousNoteId === null && store.messages.length > 0) {
         return;
       }
 
@@ -240,13 +251,16 @@ const ChatViewInternal = observer<ChatViewProps>(
     }, [modalApprovals.length]);
 
     const handleSubmit = useCallback(
-      async (attachmentIds: string[]) => {
+      async (payload: { attachmentIds: string[]; voiceAudioUrl?: string | null }) => {
         if (!inputValue.trim() || store.isStreaming) return;
 
         const message = inputValue.trim();
         try {
           setInputValue('');
-          await store.sendMessage(message, undefined, attachmentIds);
+          const metadata = payload.voiceAudioUrl
+            ? { voiceAudioUrl: payload.voiceAudioUrl }
+            : undefined;
+          await store.sendMessage(message, metadata, payload.attachmentIds);
         } catch (error) {
           setInputValue(message);
           store.error = error instanceof Error ? error.message : 'Failed to send message';
@@ -568,6 +582,9 @@ const ChatViewInternal = observer<ChatViewProps>(
             ? `${inlineApprovals.length} pending approval${inlineApprovals.length === 1 ? '' : 's'} require your attention`
             : ''}
         </div>
+
+        {/* File preview modal — opens when AttachmentChip is clicked */}
+        {attachmentPreview.signedUrl && <FilePreviewModal {...attachmentPreview} />}
 
         {/* Clear conversation confirmation dialog */}
         <AlertDialog open={showClearDialog} onOpenChange={setShowClearDialog}>
