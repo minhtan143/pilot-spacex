@@ -103,7 +103,9 @@ def build_mcp_servers(
     from pilot_space.ai.mcp.block_ref_map import BlockRefMap
 
     if feature_toggles is None:
-        feature_toggles = {}
+        from pilot_space.api.v1.schemas.workspace import WorkspaceFeatureToggles
+
+        feature_toggles = WorkspaceFeatureToggles().model_dump()
 
     _note_obj = input_data.context.get("note")
     _note_raw = getattr(_note_obj, "content", {}) if _note_obj else {}

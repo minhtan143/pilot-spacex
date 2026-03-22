@@ -60,17 +60,23 @@ class WorkspaceNotFoundError(FeatureToggleError):
 
 
 class NotAMemberError(FeatureToggleError):
-    """User is not a member of the workspace."""
+    """User is not a member of the workspace.
+
+    SEC-M1: returns 404 (not 403) to prevent workspace-ID enumeration.
+    """
 
     error_code = "not_a_member"
-    http_status = 403
+    http_status = 404
 
 
 class InsufficientPermissionError(FeatureToggleError):
-    """User does not have admin/owner role."""
+    """User does not have admin/owner role.
+
+    SEC-M1: returns 404 (not 403) to prevent workspace-ID enumeration.
+    """
 
     error_code = "insufficient_permission"
-    http_status = 403
+    http_status = 404
 
 
 class EmptyUpdateError(FeatureToggleError):
@@ -116,14 +122,22 @@ class FeatureToggleService:
         return workspace
 
     async def _require_member(self, workspace_id: UUID, user_id: UUID) -> Workspace:
-        """Require the user to be a workspace member (any role)."""
+        """Require the user to be a workspace member (any role).
+
+        SEC-M1: raises NotAMemberError(404) with generic message to prevent
+        workspace-ID enumeration.
+        """
         workspace = await self._require_workspace(workspace_id)
         if not await self._repo.is_member(workspace_id, user_id):
-            raise NotAMemberError("Not a member of this workspace")
+            raise NotAMemberError("Workspace not found")
         return workspace
 
     async def _require_admin(self, workspace_id: UUID, user_id: UUID) -> Workspace:
-        """Require the user to be a workspace admin or owner."""
+        """Require the user to be a workspace admin or owner.
+
+        SEC-M1: raises InsufficientPermissionError(404) with generic message
+        to prevent workspace-ID enumeration.
+        """
         from pilot_space.infrastructure.database.models.workspace_member import (
             WorkspaceRole,
         )
@@ -131,7 +145,7 @@ class FeatureToggleService:
         workspace = await self._require_workspace(workspace_id)
         role = await self._repo.get_member_role(workspace_id, user_id)
         if role not in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN):
-            raise InsufficientPermissionError("Admin role required")
+            raise InsufficientPermissionError("Workspace not found")
         return workspace
 
     # -- public API -------------------------------------------------------

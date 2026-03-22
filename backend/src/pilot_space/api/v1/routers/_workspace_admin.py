@@ -28,6 +28,11 @@ async def get_admin_workspace(
 ) -> Workspace:
     """Resolve workspace and verify admin/owner access.
 
+    SEC-M1: Both "workspace not found" and "insufficient permission" return
+    HTTP 404 to prevent workspace-ID enumeration.  An attacker observing
+    403 vs 404 could otherwise infer the existence of workspaces they have
+    no access to.
+
     Args:
         workspace_id: Workspace identifier.
         current_user: Authenticated user from JWT.
@@ -37,8 +42,7 @@ async def get_admin_workspace(
         Workspace model.
 
     Raises:
-        HTTPException 404: Workspace not found.
-        HTTPException 403: User is not admin/owner.
+        HTTPException 404: Workspace not found **or** user lacks admin access.
     """
     from pilot_space.infrastructure.database.models.workspace_member import WorkspaceRole
 
@@ -52,9 +56,10 @@ async def get_admin_workspace(
 
     role = await workspace_repo.get_member_role(workspace_id, current_user.user_id)
     if role not in (WorkspaceRole.OWNER, WorkspaceRole.ADMIN):
+        # SEC-M1: return 404 to prevent workspace-ID enumeration
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin role required",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
         )
 
     return workspace
@@ -67,6 +72,9 @@ async def get_member_workspace(
 ) -> Workspace:
     """Resolve workspace and verify the user is a member (any role).
 
+    SEC-M1: Both "workspace not found" and "not a member" return HTTP 404
+    to prevent workspace-ID enumeration.
+
     Args:
         workspace_id: Workspace identifier.
         current_user: Authenticated user from JWT.
@@ -76,8 +84,7 @@ async def get_member_workspace(
         Workspace model.
 
     Raises:
-        HTTPException 404: Workspace not found.
-        HTTPException 403: User is not a member.
+        HTTPException 404: Workspace not found **or** user is not a member.
     """
     workspace_repo = WorkspaceRepository(session=session)
     workspace = await workspace_repo.get_by_id(workspace_id)
@@ -88,9 +95,10 @@ async def get_member_workspace(
         )
 
     if not await workspace_repo.is_member(workspace_id, current_user.user_id):
+        # SEC-M1: return 404 to prevent workspace-ID enumeration
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not a member of this workspace",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found",
         )
 
     return workspace
