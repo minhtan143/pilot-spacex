@@ -266,6 +266,14 @@ export function FormConfigTab({ initialData, onSave, isSaving, formId }: FormCon
         ...(authToken ? { auth_token: authToken } : {}),
         ...(headersMap ? { headers: headersMap } : {}),
         ...(envVarsMap ? { env_vars: envVarsMap } : {}),
+        ...(authType === 'oauth2'
+          ? {
+              oauth_client_id: form.oauthClientId.trim() || null,
+              oauth_auth_url: form.oauthAuthUrl.trim() || null,
+              oauth_token_url: form.oauthTokenUrl.trim() || null,
+              oauth_scopes: form.oauthScopes.trim() || null,
+            }
+          : {}),
       };
       onSave(data);
     } else {

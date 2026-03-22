@@ -1907,19 +1907,23 @@ def test_remote_server_rejects_command_runner() -> None:
 
 
 def test_import_rejects_non_npx_uvx_command() -> None:
-    """T024: Import service rejects entries with unsupported command runners."""
+    """T024: Import service surfaces unsupported command runners as ErrorEntry."""
     from pilot_space.application.services.mcp.import_mcp_servers_service import (
         ImportMcpServersService,
     )
 
-    # docker run is not an npx/uvx command — should be excluded from parsed list
+    # docker run is not an npx/uvx command — should appear as a parse error, not silently dropped
     config = '{"mcpServers": {"bad": {"command": "docker run foo"}}}'
-    parsed = ImportMcpServersService.parse_config_json(config)
-    assert len(parsed) == 0, "docker run command should be rejected by parser"
+    parsed, errors = ImportMcpServersService.parse_config_json(config)
+    assert len(parsed) == 0, "docker run command should not produce a parsed server"
+    assert len(errors) == 1, "docker run command should produce a parse error"
+    assert errors[0].name == "bad"
+    assert "unsupported_command_runner" in errors[0].reason
 
     # npx command should be accepted
     config_valid = '{"mcpServers": {"good": {"command": "npx @foo/bar"}}}'
-    parsed_valid = ImportMcpServersService.parse_config_json(config_valid)
+    parsed_valid, errors_valid = ImportMcpServersService.parse_config_json(config_valid)
+    assert len(errors_valid) == 0
     assert len(parsed_valid) == 1
     assert parsed_valid[0].command_runner is not None
     assert parsed_valid[0].command_runner.value == "npx"

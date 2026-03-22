@@ -143,25 +143,6 @@ async def http_exception_handler(
     )
 
 
-def _sanitize_pydantic_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Make Pydantic validation error dicts JSON-serializable.
-
-    The ``ctx`` field may contain raw ``Exception`` objects (e.g. ``ValueError``)
-    which are not JSON-serializable.  This helper converts them to strings.
-    """
-    sanitized: list[dict[str, Any]] = []
-    for err in errors:
-        clean = dict(err)
-        ctx = clean.get("ctx")
-        if isinstance(ctx, dict):
-            clean["ctx"] = {
-                k: str(v) if isinstance(v, Exception) else v
-                for k, v in ctx.items()
-            }
-        sanitized.append(clean)
-    return sanitized
-
-
 async def validation_exception_handler(
     request: Request,
     exc: Exception,
@@ -176,7 +157,7 @@ async def validation_exception_handler(
         Problem Details JSON response.
     """
     if isinstance(exc, RequestValidationError):
-        errors = _sanitize_pydantic_errors(exc.errors())
+        errors = exc.errors()
         detail = "Validation failed"
         extensions = {"errors": errors}
     else:
@@ -274,6 +255,34 @@ async def transcription_error_handler(
     return await generic_exception_handler(request, exc)
 
 
+async def mcp_server_error_handler(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    """Handle McpServerError with RFC 7807 Problem Details response.
+
+    Maps McpServerError.http_status and error_code to a structured
+    problem+json body so routers don't need manual try/except → HTTPException.
+
+    Args:
+        request: The incoming request.
+        exc: The McpServerError exception.
+
+    Returns:
+        Problem Details JSON response.
+    """
+    from pilot_space.application.services.mcp.exceptions import McpServerError
+
+    if isinstance(exc, McpServerError):
+        return create_problem_response(
+            status_code=exc.http_status,
+            detail=exc.message,
+            instance=str(request.url),
+            extensions={"error_code": exc.error_code},
+        )
+    return await generic_exception_handler(request, exc)
+
+
 def register_exception_handlers(app: Any) -> None:
     """Register all exception handlers with the app.
 
@@ -281,10 +290,12 @@ def register_exception_handlers(app: Any) -> None:
         app: FastAPI application instance.
     """
     from pilot_space.ai.exceptions import AINotConfiguredError
+    from pilot_space.application.services.mcp.exceptions import McpServerError
     from pilot_space.application.services.transcription import TranscriptionError
 
     app.add_exception_handler(HTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(AINotConfiguredError, ai_not_configured_handler)
     app.add_exception_handler(TranscriptionError, transcription_error_handler)
+    app.add_exception_handler(McpServerError, mcp_server_error_handler)
     app.add_exception_handler(Exception, generic_exception_handler)

@@ -17,6 +17,7 @@ from uuid import uuid4
 
 import pytest
 
+from pilot_space.application.services.mcp.exceptions import McpConfigParseError
 from pilot_space.application.services.mcp.import_mcp_servers_service import (
     ImportMcpServersService,
     ParsedMcpServer,
@@ -45,7 +46,8 @@ class TestParseConfigJson:
                 }
             }
         }"""
-        result = ImportMcpServersService.parse_config_json(config)
+        result, errors = ImportMcpServersService.parse_config_json(config)
+        assert len(errors) == 0
         assert len(result) == 2
 
         remote = next(r for r in result if r.name == "my-remote")
@@ -70,7 +72,8 @@ class TestParseConfigJson:
                 }
             }
         }"""
-        result = ImportMcpServersService.parse_config_json(config)
+        result, errors = ImportMcpServersService.parse_config_json(config)
+        assert len(errors) == 0
         assert len(result) == 1
         entry = result[0]
         assert entry.name == "uvx-server"
@@ -88,24 +91,27 @@ class TestParseConfigJson:
                 }
             }
         }"""
-        result = ImportMcpServersService.parse_config_json(config)
+        result, errors = ImportMcpServersService.parse_config_json(config)
+        assert len(errors) == 0
         assert len(result) == 1
         assert result[0].transport == McpTransport.STREAMABLE_HTTP
 
     def test_invalid_json_raises(self) -> None:
-        """Malformed JSON raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid JSON"):
+        """Malformed JSON raises McpConfigParseError."""
+        with pytest.raises(McpConfigParseError, match="Invalid JSON"):
             ImportMcpServersService.parse_config_json("{ invalid json }")
 
     def test_missing_mcp_servers_key_returns_empty(self) -> None:
         """Missing 'mcpServers' key returns empty list (no error)."""
-        result = ImportMcpServersService.parse_config_json('{"other": "data"}')
+        result, errors = ImportMcpServersService.parse_config_json('{"other": "data"}')
         assert result == []
+        assert errors == []
 
     def test_empty_mcp_servers(self) -> None:
         """Empty mcpServers object returns empty list."""
-        result = ImportMcpServersService.parse_config_json('{"mcpServers": {}}')
+        result, errors = ImportMcpServersService.parse_config_json('{"mcpServers": {}}')
         assert result == []
+        assert errors == []
 
 
 class TestImportServers:

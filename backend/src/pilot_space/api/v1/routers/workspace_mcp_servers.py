@@ -366,26 +366,43 @@ async def update_mcp_server(
     if body.transport is not None:
         server.transport = body.transport
     if body.command_args is not None:
-        server.command_args = body.command_args
+        server.command_args = body.command_args or None
+
+    # auth_type: when it changes, scrub fields that belong to the old type
     if body.auth_type is not None:
+        if body.auth_type != server.auth_type:
+            if body.auth_type != McpAuthType.BEARER:
+                # Switching away from bearer: clear the token
+                server.auth_token_encrypted = None
+            if body.auth_type != McpAuthType.OAUTH2:
+                # Switching away from oauth2: clear all OAuth metadata
+                server.oauth_client_id = None
+                server.oauth_auth_url = None
+                server.oauth_token_url = None
+                server.oauth_scopes = None
         server.auth_type = body.auth_type
+
+    # OAuth plaintext fields: None = omit, empty string = clear
     if body.oauth_client_id is not None:
-        server.oauth_client_id = body.oauth_client_id
+        server.oauth_client_id = body.oauth_client_id.strip() or None
     if body.oauth_auth_url is not None:
-        server.oauth_auth_url = body.oauth_auth_url
+        server.oauth_auth_url = body.oauth_auth_url.strip() or None
     if body.oauth_token_url is not None:
-        server.oauth_token_url = body.oauth_token_url
+        server.oauth_token_url = body.oauth_token_url.strip() or None
     if body.oauth_scopes is not None:
-        server.oauth_scopes = body.oauth_scopes
+        server.oauth_scopes = body.oauth_scopes.strip() or None
 
     # url_or_command: already validated above; write to ORM and keep url in sync
     if body.url_or_command is not None:
         server.url_or_command = body.url_or_command
         server.url = body.url_or_command
 
-    # Secret fields: only update if new value provided and non-empty
-    if body.auth_token is not None and body.auth_token.strip():
-        server.auth_token_encrypted = encrypt_api_key(body.auth_token)
+    # auth_token: None = omit, empty string = clear encrypted field, non-empty = re-encrypt
+    if body.auth_token is not None:
+        if body.auth_token.strip():
+            server.auth_token_encrypted = encrypt_api_key(body.auth_token)
+        else:
+            server.auth_token_encrypted = None
 
     if body.headers is not None:
         import json as _json
@@ -481,7 +498,10 @@ async def get_mcp_server_status(
         try:
             async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
                 response = await client.get(url, headers=headers)
-                probe_status = McpStatus.ENABLED if response.status_code < 500 else McpStatus.UNREACHABLE
+                if response.status_code // 100 == 2:
+                    probe_status = McpStatus.ENABLED
+                else:
+                    probe_status = McpStatus.UNHEALTHY
         except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
             probe_status = McpStatus.UNREACHABLE
         except Exception:
@@ -683,19 +703,14 @@ async def import_mcp_servers(
         WorkspaceMcpServerRepository,
     )
 
-    try:
-        parsed = ImportMcpServersService.parse_config_json(body.config_json)
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+    parsed, parse_errors = ImportMcpServersService.parse_config_json(body.config_json)
 
     repo = WorkspaceMcpServerRepository(session=session)
     result = await ImportMcpServersService.import_servers(
         workspace_id=workspace_id,
         parsed=parsed,
         repo=repo,
+        parse_errors=parse_errors,
     )
 
     logger.info(
