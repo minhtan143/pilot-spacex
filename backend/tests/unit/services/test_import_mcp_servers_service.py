@@ -23,6 +23,7 @@ from pilot_space.application.services.mcp.import_mcp_servers_service import (
     ParsedMcpServer,
 )
 from pilot_space.infrastructure.database.models.workspace_mcp_server import (
+    McpCommandRunner,
     McpServerType,
     McpTransport,
 )
@@ -56,8 +57,9 @@ class TestParseConfigJson:
 
         npx = next(r for r in result if r.name == "my-npx")
         assert npx.server_type == McpServerType.COMMAND
-        assert npx.url_or_command.startswith("npx")
+        assert npx.command_runner == McpCommandRunner.NPX
         assert "@my-pkg/mcp-server" in npx.url_or_command
+        assert not npx.url_or_command.startswith("npx")
         assert npx.transport == McpTransport.STDIO
 
     def test_parse_vscode_format(self) -> None:
