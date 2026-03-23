@@ -45,7 +45,7 @@ from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision: str = "096_mcp_settings_redevelopment"
-down_revision: str = "095_merge_heads"
+down_revision: str = "096_add_note_chunk_node_type"
 branch_labels: None = None
 depends_on: None = None
 
