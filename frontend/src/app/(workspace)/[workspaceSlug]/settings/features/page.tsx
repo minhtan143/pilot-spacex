@@ -1,7 +1,7 @@
 /**
  * Features settings page — admin toggles for workspace sidebar modules.
  *
- * T008: 8 toggleable features in two groups: Main + AI.
+ * T008: 9 toggleable features in two groups: Main + AI (6 Main + 3 AI).
  * Follows AISettingsPage error handling pattern (loading skeleton + error Alert).
  */
 
@@ -16,6 +16,7 @@ import {
   FolderKanban,
   Users,
   BookOpen,
+  Network,
   UserCog,
   DollarSign,
   CheckCircle2,
@@ -63,6 +64,12 @@ const mainFeatures: FeatureToggleItem[] = [
     label: 'Members',
     description: 'Member directory with roles, capacity planning, and contribution stats',
     icon: Users,
+  },
+  {
+    key: 'knowledge',
+    label: 'Knowledge',
+    description: 'Knowledge graph for workspace-level code and dependency visualization',
+    icon: Network,
   },
   {
     key: 'docs',
