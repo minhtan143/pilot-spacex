@@ -272,4 +272,3 @@ class TestTestProcessArgvTokenisation:
             await TestMcpConnectionService._test_process(server)
 
         assert captured_parts[0] == ["npx", "my-pkg", "--verbose"]
-
