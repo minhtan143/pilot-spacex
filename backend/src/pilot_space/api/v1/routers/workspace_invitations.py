@@ -6,6 +6,7 @@ Extracted from workspaces.py to keep files under 700 lines.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from dependency_injector.wiring import Provide, inject
@@ -25,6 +26,7 @@ from pilot_space.application.services.workspace_invitation import (
     CancelInvitationPayload,
     ListInvitationsPayload,
 )
+from pilot_space.config import get_settings
 from pilot_space.container.container import Container
 from pilot_space.dependencies.auth import CurrentUser, CurrentUserId, SessionDep
 from pilot_space.infrastructure.database.models.project import Project
@@ -36,6 +38,7 @@ from pilot_space.infrastructure.database.repositories.workspace_member_repositor
 )
 from pilot_space.infrastructure.database.rls import set_rls_context
 from pilot_space.infrastructure.logging import get_logger
+from pilot_space.infrastructure.supabase_client import get_supabase_client
 
 logger = get_logger(__name__)
 
@@ -72,15 +75,9 @@ async def add_workspace_member(
     """
     await set_rls_context(session, current_user.user_id, workspace_id)
 
-    # FR-03: validate project_assignments — at least one required for MEMBER/GUEST
     assignments = request.project_assignments or []
-    if request.role in ("MEMBER", "GUEST") and not assignments:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="At least one project assignment is required when inviting MEMBER or GUEST",
-        )
 
-    # Validate all project_ids belong to this workspace and are not archived
+    # Validate all project_ids belong to this workspace and are not archived (if provided)
     if assignments:
         project_ids = [
             UUID(str(a["project_id"])) for a in assignments if "project_id" in a
@@ -162,6 +159,36 @@ async def add_workspace_member(
     if assignments:
         invitation.project_assignments = assignments
         await session.flush()
+
+    # Send Supabase magic-link invite for new (never registered) users.
+    # Only send once — skip if already sent (retry safety).
+    if invitation.supabase_invite_sent_at is None:
+        try:
+            settings = get_settings()
+            supabase_client = await get_supabase_client()
+            redirect_url = (
+                f"{settings.frontend_url}/auth/accept-invite"
+                f"?invitation_id={invitation.id}"
+                f"&workspace_id={workspace_id}"
+            )
+            await supabase_client.auth.admin.invite_user_by_email(
+                invitation.email,
+                options={
+                    "redirect_to": redirect_url,
+                    "data": {
+                        "workspace_invitation_id": str(invitation.id),
+                        "workspace_id": str(workspace_id),
+                    },
+                },
+            )
+            invitation.supabase_invite_sent_at = datetime.now(UTC)
+            await session.flush()
+        except Exception:
+            logger.warning(
+                "supabase_invite_failed",
+                invitation_id=str(invitation.id),
+                email=invitation.email,
+            )
 
     return InvitationResponse(
         id=invitation.id,

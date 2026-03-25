@@ -16,6 +16,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from pilot_space.api.v1.dependencies import AuthServiceDep
 from pilot_space.api.v1.dependencies_pilot import ValidateAPIKeyServiceDep
+from pilot_space.api.v1.repository_deps import (
+    InvitationRepositoryDep,
+    UserRepositoryDep,
+    WorkspaceRepositoryDep,
+)
 from pilot_space.api.v1.schemas.auth import (
     AiSettingsSchema,
     LoginRequest,
@@ -30,8 +35,13 @@ from pilot_space.application.services.auth import (
     UpdateProfilePayload,
     ValidateAPIKeyPayload,
 )
+from pilot_space.application.services.workspace_invitation import (
+    AcceptInvitationPayload,
+    WorkspaceInvitationService,
+)
 from pilot_space.dependencies import CurrentUser
 from pilot_space.dependencies.auth import SessionDep
+from pilot_space.domain.exceptions import ConflictError, NotFoundError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -287,6 +297,69 @@ async def validate_api_key(
     finally:
         await asyncio.sleep(0.05)  # constant-time regardless of success/failure
     return {"workspace_slug": result.workspace_slug}
+
+
+@router.post(
+    "/workspace-invitations/{invitation_id}/accept",
+    tags=["auth", "invitations"],
+    status_code=status.HTTP_200_OK,
+)
+async def accept_workspace_invitation(
+    invitation_id: str,
+    session: SessionDep,
+    current_user: CurrentUser,
+    invitation_repo: InvitationRepositoryDep,
+    workspace_repo: WorkspaceRepositoryDep,
+    user_repo: UserRepositoryDep,
+) -> dict[str, object]:
+    """Accept a workspace invitation after Supabase magic-link authentication.
+
+    Called by the /auth/accept-invite frontend page once the Supabase session
+    is established via the magic link. Adds the user to the workspace and
+    materializes any project assignments.
+
+    Returns:
+        workspace_slug: Slug to redirect to after acceptance.
+        requires_profile_completion: True if user must provide a full name.
+
+    Raises:
+        HTTPException 404: Invitation not found.
+        HTTPException 409: Invitation already accepted or cancelled.
+    """
+    from uuid import UUID
+
+    try:
+        inv_uuid = UUID(invitation_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation not found",
+        ) from exc
+
+    svc = WorkspaceInvitationService(
+        workspace_repo=workspace_repo,
+        invitation_repo=invitation_repo,
+        user_repo=user_repo,
+    )
+
+    try:
+        result = await svc.accept_invitation(
+            AcceptInvitationPayload(
+                invitation_id=inv_uuid,
+                user_id=current_user.user_id,
+            )
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    await session.commit()
+
+    return {
+        "workspace_slug": result.workspace_slug,
+        "requires_profile_completion": result.requires_profile_completion,
+    }
 
 
 __all__ = ["router"]

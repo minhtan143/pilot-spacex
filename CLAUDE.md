@@ -180,3 +180,10 @@ Notion-like neutral base with editorial quality. Inspirations: Craft (layered su
 5. **Accessible by default** — WCAG 2.2 AA baseline, color never sole meaning carrier, keyboard-first
 
 Full design context: `.impeccable.md` | Full UI spec: `specs/001-pilot-space-mvp/ui-design-spec.md`
+
+## Active Technologies
+- Python 3.12 (backend), TypeScript 5 / Next.js 16.1.4 / React 19 (frontend) + FastAPI, SQLAlchemy 2 async, Alembic, Supabase/PostgreSQL (RLS), pydantic v2 (backend); MobX 6, TanStack Query, shadcn/ui, Vitest, Playwright (frontend) (026-project-rbac)
+- PostgreSQL 15+ with Supabase RLS; `project_members` is a new junction table with FK constraints and RLS policies matching the existing workspace-scope pattern (026-project-rbac)
+
+## Recent Changes
+- 026-project-rbac: Added Python 3.12 (backend), TypeScript 5 / Next.js 16.1.4 / React 19 (frontend) + FastAPI, SQLAlchemy 2 async, Alembic, Supabase/PostgreSQL (RLS), pydantic v2 (backend); MobX 6, TanStack Query, shadcn/ui, Vitest, Playwright (frontend)

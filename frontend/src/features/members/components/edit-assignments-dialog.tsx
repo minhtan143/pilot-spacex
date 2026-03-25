@@ -128,7 +128,7 @@ export function EditAssignmentsDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Role select */}
+          {/* Role select — excludes current role (no-op) and owner (dedicated transfer action) */}
           <div className="space-y-2">
             <Label htmlFor="edit-role">Workspace Role</Label>
             <Select
@@ -140,9 +140,13 @@ export function EditAssignmentsDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="member">Member</SelectItem>
-                <SelectItem value="guest">Guest</SelectItem>
+                {(['admin', 'member', 'guest'] as const)
+                  .filter((r) => r !== currentRole)
+                  .map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>

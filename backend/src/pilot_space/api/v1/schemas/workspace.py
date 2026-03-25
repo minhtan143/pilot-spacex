@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import EmailStr, Field, model_validator
+from pydantic import EmailStr, Field, field_validator, model_validator
 
 from pilot_space.api.v1.schemas.base import BaseSchema, EntitySchema
 
@@ -135,10 +135,16 @@ class WorkspaceMemberUpdate(BaseSchema):
         role: New role for member.
     """
 
-    role: str = Field(
-        pattern="^(OWNER|ADMIN|MEMBER|GUEST)$",
-        description="New role for member",
-    )
+    role: str = Field(description="New role for member")
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def normalise_role(cls, v: str) -> str:
+        """Normalise role string to uppercase; reject unknown values."""
+        upper = str(v).upper()
+        if upper not in ("OWNER", "ADMIN", "MEMBER", "GUEST"):
+            raise ValueError(f"Invalid role: {v!r}")
+        return upper
 
 
 class WorkspaceMemberAvailabilityUpdate(BaseSchema):
@@ -207,7 +213,7 @@ class InvitationCreateRequest(BaseSchema):
     )
     project_assignments: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="Project assignments: [{project_id, role}]. At least one required (FR-03).",
+        description="Project assignments: [{project_id, role}]. Optional — member starts with no project assignment if omitted (FR-03-3, Amendment 1).",
     )
 
 

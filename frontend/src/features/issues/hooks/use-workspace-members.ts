@@ -26,13 +26,25 @@ export interface WorkspaceMember {
 
 export const workspaceMembersKeys = {
   all: (workspaceId: string) => ['workspaces', workspaceId, 'members'] as const,
+  filtered: (workspaceId: string, projectId: string | null) =>
+    ['workspaces', workspaceId, 'members', { projectId }] as const,
 };
 
-export function useWorkspaceMembers(workspaceId: string) {
+interface UseWorkspaceMembersOptions {
+  projectId?: string | null;
+}
+
+export function useWorkspaceMembers(workspaceId: string, options?: UseWorkspaceMembersOptions) {
+  const projectId = options?.projectId ?? null;
   return useQuery<WorkspaceMember[]>({
-    queryKey: workspaceMembersKeys.all(workspaceId),
+    queryKey: projectId
+      ? workspaceMembersKeys.filtered(workspaceId, projectId)
+      : workspaceMembersKeys.all(workspaceId),
     queryFn: async () => {
-      const members = await apiClient.get<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`);
+      const params = projectId ? `?project_id=${projectId}` : '';
+      const members = await apiClient.get<WorkspaceMember[]>(
+        `/workspaces/${workspaceId}/members${params}`
+      );
       return members.map((m) => ({
         ...m,
         role: m.role.toLowerCase() as WorkspaceMember['role'],

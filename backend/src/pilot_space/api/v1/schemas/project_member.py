@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ── Project assignment item (used in invites and bulk-update) ──────────────────
 
@@ -80,13 +80,24 @@ class BulkAssignmentRequest(BaseModel):
 
     workspace_role: str | None = Field(
         default=None,
-        pattern="^(OWNER|ADMIN|MEMBER|GUEST)$",
         description="New workspace-level role (optional).",
     )
     project_assignments: list[ProjectAssignmentAction] = Field(
         default_factory=list,
         description="Add or remove project memberships.",
     )
+
+
+    @field_validator("workspace_role", mode="before")
+    @classmethod
+    def normalise_role(cls, v: str | None) -> str | None:
+        """Normalise role string to uppercase; reject unknown values."""
+        if v is None:
+            return None
+        upper = str(v).upper()
+        if upper not in ("OWNER", "ADMIN", "MEMBER", "GUEST"):
+            raise ValueError(f"Invalid workspace role: {v!r}")
+        return upper
 
 
 class BulkAssignmentWarning(BaseModel):

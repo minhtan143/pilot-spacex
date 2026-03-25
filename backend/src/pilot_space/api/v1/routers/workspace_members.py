@@ -106,7 +106,15 @@ async def list_workspace_members(
 
     pm_repo = ProjectMemberRepository(session=session)
 
-    members = result.members
+    _ROLE_ORDER = {"owner": 1, "admin": 2, "member": 3, "guest": 4}
+
+    members = sorted(
+        result.members,
+        key=lambda m: (
+            _ROLE_ORDER.get(m.role.value.lower(), 5),
+            m.created_at or "",
+        ),
+    )
     if project_id is not None:
         # Filter to members assigned to this project
         project_user_ids = {
@@ -524,6 +532,28 @@ async def bulk_update_member_assignments(
         }
         for a in (body.project_assignments or [])
     ]
+
+    # B-02: Validate all submitted project_ids belong to this workspace
+    if project_assignments:
+        from sqlalchemy import select as sa_select
+
+        from pilot_space.infrastructure.database.models.project import Project as ProjectModel
+
+        submitted_ids = [UUID(a["project_id"]) for a in project_assignments]
+        rows = await session.execute(
+            sa_select(ProjectModel.id).where(
+                ProjectModel.id.in_(submitted_ids),
+                ProjectModel.workspace_id == workspace_id,
+                ProjectModel.is_deleted == False,  # noqa: E712
+            )
+        )
+        found_ids = {row.id for row in rows.all()}
+        invalid = [str(pid) for pid in submitted_ids if pid not in found_ids]
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Project(s) not found in workspace: {', '.join(invalid)}",
+            )
 
     pm_repo = ProjectMemberRepository(session=session)
     pm_svc = ProjectMemberService(project_member_repository=pm_repo)

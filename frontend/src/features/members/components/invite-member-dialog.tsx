@@ -75,7 +75,7 @@ export const InviteMemberDialog = observer(function InviteMemberDialog({
   const { data: projectsData } = useProjects({ workspaceId, enabled: open });
   const allProjects = selectAllProjects(projectsData).filter((p) => !p.is_archived);
 
-  const requiresProjectAssignment = role === 'member' || role === 'guest';
+  const showProjectPicker = role === 'member' || role === 'guest';
 
   const resetForm = () => {
     setEmail('');
@@ -99,30 +99,18 @@ export const InviteMemberDialog = observer(function InviteMemberDialog({
     return true;
   };
 
-  const validateProjects = (): boolean => {
-    if (requiresProjectAssignment && selectedProjectIds.length === 0) {
-      setProjectError('Please assign at least one project for member and guest roles.');
-      return false;
-    }
-    setProjectError(null);
-    return true;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const emailValid = validateEmail(email);
-    const projectsValid = validateProjects();
-    if (!emailValid || !projectsValid) return;
+    if (!emailValid) return;
 
     setIsSubmitting(true);
 
     const result = await workspaceStore.inviteMember(workspaceId, {
       email: email.trim(),
       role,
-      project_assignments: requiresProjectAssignment
-        ? selectedProjectIds.map((id) => ({ project_id: id }))
-        : [],
+      project_assignments: selectedProjectIds.map((id) => ({ project_id: id })),
     });
 
     setIsSubmitting(false);
@@ -235,11 +223,9 @@ export const InviteMemberDialog = observer(function InviteMemberDialog({
           </div>
 
           {/* Project assignment — required for member/guest roles */}
-          {requiresProjectAssignment && (
+          {showProjectPicker && (
             <div className="space-y-2">
-              <Label>
-                Projects <span className="text-destructive">*</span>
-              </Label>
+              <Label>Projects</Label>
               <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -309,7 +295,7 @@ export const InviteMemberDialog = observer(function InviteMemberDialog({
                 </p>
               )}
               <p className="text-sm text-muted-foreground">
-                Members and guests must be assigned to at least one project.
+                Optionally assign to one or more projects.
               </p>
             </div>
           )}

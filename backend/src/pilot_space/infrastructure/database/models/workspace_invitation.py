@@ -113,6 +113,14 @@ class WorkspaceInvitation(BaseModel):
         default=None,
     )
 
+    # Supabase magic-link tracking (Amendment 1 — FR-08)
+    # Set when inviteUserByEmail() is called; prevents duplicate magic links on retry.
+    supabase_invite_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
+
     # Relationships
     workspace: Mapped[Workspace] = relationship(
         "Workspace",

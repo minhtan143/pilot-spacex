@@ -1,9 +1,13 @@
 /**
- * MembersPage — Workspace members management with list layout.
+ * MembersPage — Workspace members management with table layout.
  *
  * Route: /[workspaceSlug]/members
- * Features: search, role filter, vertical list, invite dialog, pending invitations tab.
+ * Features: search, role filter, table layout, pagination, invite dialog, pending invitations tab.
  * Admin-only editing, read-only for non-admins.
+ *
+ * E-04: Table layout for members and invitations.
+ * E-05: Client-side pagination for both tabs.
+ * E-06: Member count badge on Members tab trigger, not header.
  */
 
 'use client';
@@ -20,6 +24,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   useWorkspaceMembers,
@@ -27,18 +38,18 @@ import {
 } from '@/features/issues/hooks/use-workspace-members';
 import { EditAssignmentsDialog } from '@/features/members/components/edit-assignments-dialog';
 import { InviteMemberDialog } from '@/features/members/components/invite-member-dialog';
-import { MemberCard } from '@/features/members/components/member-card';
+import { MemberTableRow } from '@/features/members/components/member-table-row';
 import {
   useCancelInvitation,
   useWorkspaceInvitations,
 } from '@/features/members/hooks/use-workspace-invitations';
 import { ROLE_HIERARCHY } from '@/features/members/utils/member-utils';
+import { selectAllProjects, useProjects } from '@/features/projects/hooks/useProjects';
 import { ConfirmActionDialog } from '@/features/settings/components/confirm-action-dialog';
-import { workspacesApi } from '@/services/api/workspaces';
 import { useStore } from '@/stores';
 import type { WorkspaceRole } from '@/stores/WorkspaceStore';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Clock, Loader2, Mail, Search, Trash2 } from 'lucide-react';
+import { AlertCircle, ChevronLeft, ChevronRight, Clock, Loader2, Mail, Search, Trash2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useParams, useRouter } from 'next/navigation';
 import * as React from 'react';
@@ -48,8 +59,47 @@ function MembersLoadingSkeleton() {
   return (
     <div className="space-y-2">
       {Array.from({ length: 5 }).map((_, i) => (
-        <Skeleton key={i} className="h-16 w-full rounded-lg" />
+        <Skeleton key={i} className="h-12 w-full rounded-lg" />
       ))}
+    </div>
+  );
+}
+
+const ITEMS_PER_PAGE = 25;
+
+function PaginationControls({
+  page,
+  totalPages,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  onPageChange: (p: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-end gap-2 pt-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={page <= 1}
+        onClick={() => onPageChange(page - 1)}
+        aria-label="Previous page"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <span className="text-xs text-muted-foreground">
+        {page} / {totalPages}
+      </span>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={page >= totalPages}
+        onClick={() => onPageChange(page + 1)}
+        aria-label="Next page"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
@@ -72,20 +122,25 @@ export const MembersPage = observer(function MembersPage() {
 
   const isAdmin = workspaceStore.isAdmin;
 
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [roleFilter, setRoleFilter] = React.useState<string>('all');
+  const [projectFilter, setProjectFilter] = React.useState<string | null>(null);
+  const [membersPage, setMembersPage] = React.useState(1);
+  const [invitationsPage, setInvitationsPage] = React.useState(1);
+
   const {
     data: members,
     isLoading: membersLoading,
     error: membersError,
-  } = useWorkspaceMembers(workspaceId);
+  } = useWorkspaceMembers(workspaceId, { projectId: projectFilter });
+
+  const { data: projectsData } = useProjects({ workspaceId, enabled: isAdmin });
 
   const { data: invitations, isLoading: invitationsLoading } = useWorkspaceInvitations(
     workspaceId,
     isAdmin
   );
   const cancelInvitation = useCancelInvitation(workspaceId);
-
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const [roleFilter, setRoleFilter] = React.useState<string>('all');
   const [updatingMemberId, setUpdatingMemberId] = React.useState<string | null>(null);
   const [editAssignmentsTarget, setEditAssignmentsTarget] = React.useState<{
     userId: string;
@@ -140,6 +195,17 @@ export const MembersPage = observer(function MembersPage() {
     return result;
   }, [sortedMembers, roleFilter, searchQuery]);
 
+  // Reset page when filters change
+  React.useEffect(() => {
+    setMembersPage(1);
+  }, [roleFilter, searchQuery, projectFilter]);
+
+  const membersTotalPages = Math.max(1, Math.ceil(filteredMembers.length / ITEMS_PER_PAGE));
+  const pagedMembers = filteredMembers.slice(
+    (membersPage - 1) * ITEMS_PER_PAGE,
+    membersPage * ITEMS_PER_PAGE
+  );
+
   const adminCount = React.useMemo(() => {
     if (!sortedMembers) return 0;
     return sortedMembers.filter((m) => m.role === 'admin' || m.role === 'owner').length;
@@ -149,6 +215,12 @@ export const MembersPage = observer(function MembersPage() {
     if (!invitations) return [];
     return invitations.filter((inv) => inv.status === 'pending');
   }, [invitations]);
+
+  const invitationsTotalPages = Math.max(1, Math.ceil(pendingInvitations.length / ITEMS_PER_PAGE));
+  const pagedInvitations = pendingInvitations.slice(
+    (invitationsPage - 1) * ITEMS_PER_PAGE,
+    invitationsPage * ITEMS_PER_PAGE
+  );
 
   const handleRoleChange = (userId: string, role: WorkspaceRole) => {
     const member = members?.find((m) => m.userId === userId);
@@ -279,17 +351,6 @@ export const MembersPage = observer(function MembersPage() {
     });
   };
 
-  const handleAvailabilityChange = async (userId: string, hours: number) => {
-    try {
-      await workspacesApi.updateMemberAvailability(workspaceId, userId, hours);
-      toast.success('Availability updated', {
-        description: `Weekly available hours set to ${hours}h.`,
-      });
-    } catch {
-      toast.error('Failed to update availability');
-    }
-  };
-
   const handleEditAssignments = (userId: string) => {
     const member = members?.find((m) => m.userId === userId);
     if (!member) return;
@@ -359,24 +420,55 @@ export const MembersPage = observer(function MembersPage() {
             <SelectItem value="guest">Guest</SelectItem>
           </SelectContent>
         </Select>
+        {isAdmin && (
+          <Select
+            value={projectFilter ?? 'all'}
+            onValueChange={(v) => setProjectFilter(v === 'all' ? null : v)}
+          >
+            <SelectTrigger className="w-[160px]" aria-label="Filter by project">
+              <SelectValue placeholder="All Projects" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Projects</SelectItem>
+              {selectAllProjects(projectsData)
+                .filter((p) => !p.is_archived)
+                .map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        )}
+        {projectFilter && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setProjectFilter(null)}
+            aria-label="Show all members"
+          >
+            Show All
+          </Button>
+        )}
       </div>
 
-      {/* Card Grid */}
+      {/* Members Table */}
       {filteredMembers.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-12 text-center">
           <Search className="h-8 w-8 text-muted-foreground/40" aria-hidden="true" />
           <p className="text-sm text-muted-foreground">
-            {searchQuery || roleFilter !== 'all'
+            {searchQuery || roleFilter !== 'all' || projectFilter
               ? 'No members matching your filters.'
               : 'No members found.'}
           </p>
-          {(searchQuery || roleFilter !== 'all') && (
+          {(searchQuery || roleFilter !== 'all' || projectFilter) && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
                 setSearchQuery('');
                 setRoleFilter('all');
+                setProjectFilter(null);
               }}
             >
               Clear filters
@@ -384,37 +476,53 @@ export const MembersPage = observer(function MembersPage() {
           )}
         </div>
       ) : (
-        <div className="space-y-2" role="list" aria-label="Workspace members">
-          {filteredMembers.map((member) => (
-            <div key={member.userId} role="listitem">
-              <MemberCard
-                member={member}
-                currentUserRole={workspaceStore.currentUserRole}
-                isCurrentUser={member.userId === currentUserId}
-                isLastAdmin={
-                  (member.role === 'admin' || member.role === 'owner') && adminCount <= 1
-                }
-                onRoleChange={handleRoleChange}
-                onRemove={handleRemoveMember}
-                onTransferOwnership={handleTransferOwnership}
-                onAvailabilityChange={handleAvailabilityChange}
-                onEditAssignments={isAdmin ? handleEditAssignments : undefined}
-                isUpdating={updatingMemberId === member.userId}
-                onNavigate={handleNavigate}
-              />
-            </div>
-          ))}
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Member</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead className="hidden md:table-cell">Projects</TableHead>
+                <TableHead className="hidden sm:table-cell">Joined</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pagedMembers.map((member) => (
+                <MemberTableRow
+                  key={member.userId}
+                  member={member}
+                  currentUserRole={workspaceStore.currentUserRole}
+                  isCurrentUser={member.userId === currentUserId}
+                  isLastAdmin={
+                    (member.role === 'admin' || member.role === 'owner') && adminCount <= 1
+                  }
+                  onRoleChange={handleRoleChange}
+                  onRemove={handleRemoveMember}
+                  onTransferOwnership={handleTransferOwnership}
+                  onEditAssignments={isAdmin ? handleEditAssignments : undefined}
+                  isUpdating={updatingMemberId === member.userId}
+                  onNavigate={handleNavigate}
+                />
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
+      <PaginationControls
+        page={membersPage}
+        totalPages={membersTotalPages}
+        onPageChange={setMembersPage}
+      />
     </>
   );
 
   const invitationsContent = (
-    <div className="space-y-2" role="list" aria-label="Pending invitations">
+    <div className="space-y-2" aria-label="Pending invitations">
       {invitationsLoading ? (
         <div className="space-y-3">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
         </div>
       ) : pendingInvitations.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-12 text-center">
@@ -423,41 +531,66 @@ export const MembersPage = observer(function MembersPage() {
           {isAdmin && <InviteMemberDialog workspaceId={workspaceId} />}
         </div>
       ) : (
-        pendingInvitations.map((invitation) => (
-          <div
-            key={invitation.id}
-            className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:gap-4"
-            role="listitem"
-          >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
-              <Mail className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{invitation.email}</p>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3" />
-                <span>Invited {new Date(invitation.createdAt).toLocaleDateString()}</span>
-              </div>
-            </div>
-            <Badge variant="outline" className="capitalize">
-              {invitation.role}
-            </Badge>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-              onClick={() => handleCancelInvitation(invitation.id, invitation.email)}
-              disabled={cancelInvitation.isPending}
-              aria-label={`Cancel invitation for ${invitation.email}`}
-            >
-              {cancelInvitation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-            </Button>
+        <>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead className="hidden sm:table-cell">Invited</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pagedInvitations.map((invitation) => (
+                  <TableRow key={invitation.id}>
+                    <td className="p-3 align-middle text-sm font-medium">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
+                          <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
+                        {invitation.email}
+                      </div>
+                    </td>
+                    <td className="p-3 align-middle">
+                      <Badge variant="outline" className="capitalize text-xs">
+                        {invitation.role}
+                      </Badge>
+                    </td>
+                    <td className="p-3 align-middle hidden sm:table-cell text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {new Date(invitation.createdAt).toLocaleDateString()}
+                      </span>
+                    </td>
+                    <td className="p-3 align-middle w-10 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                        onClick={() => handleCancelInvitation(invitation.id, invitation.email)}
+                        disabled={cancelInvitation.isPending}
+                        aria-label={`Cancel invitation for ${invitation.email}`}
+                      >
+                        {cancelInvitation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </td>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
-        ))
+          <PaginationControls
+            page={invitationsPage}
+            totalPages={invitationsTotalPages}
+            onPageChange={setInvitationsPage}
+          />
+        </>
       )}
     </div>
   );
@@ -468,10 +601,7 @@ export const MembersPage = observer(function MembersPage() {
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
-              <Badge variant="secondary">{members?.length ?? 0}</Badge>
-            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
             <p className="text-sm text-muted-foreground">
               {isAdmin
                 ? 'Manage workspace members, roles, and invitations.'
@@ -481,11 +611,18 @@ export const MembersPage = observer(function MembersPage() {
           {isAdmin && <InviteMemberDialog workspaceId={workspaceId} />}
         </div>
 
-        {/* Content: Tabs for admin, plain grid for non-admin */}
+        {/* Content: Tabs for admin, plain table for non-admin */}
         {isAdmin ? (
           <Tabs defaultValue="members">
             <TabsList>
-              <TabsTrigger value="members">Members</TabsTrigger>
+              <TabsTrigger value="members" className="gap-1.5">
+                Members
+                {(members?.length ?? 0) > 0 && (
+                  <Badge variant="secondary" className="h-5 min-w-5 px-1 text-xs">
+                    {members?.length ?? 0}
+                  </Badge>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="invitations" className="gap-1.5">
                 Invitations
                 {pendingInvitations.length > 0 && (
