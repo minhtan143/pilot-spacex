@@ -25,6 +25,7 @@ from pilot_space.api.v1.schemas.workspace import (
     WorkspaceMemberResponse,
 )
 from pilot_space.application.services.workspace_invitation import (
+    AcceptInvitationPayload,
     CancelInvitationPayload,
     ListInvitationsPayload,
 )
@@ -32,9 +33,6 @@ from pilot_space.config import get_settings
 from pilot_space.dependencies.auth import CurrentUser, CurrentUserId, SessionDep
 from pilot_space.domain.exceptions import AppError, ValidationError
 from pilot_space.infrastructure.database.models.project import Project
-from pilot_space.infrastructure.database.models.workspace_invitation import (
-    WorkspaceInvitation,
-)
 from pilot_space.infrastructure.database.repositories.project_member import (
     ProjectMemberRepository,
 )
@@ -45,21 +43,6 @@ from pilot_space.infrastructure.supabase_client import get_supabase_client
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces", "invitations"])
-
-
-def _to_invitation_response(inv: WorkspaceInvitation) -> InvitationResponse:
-    """Convert a WorkspaceInvitation model to response schema."""
-    return InvitationResponse(
-        id=inv.id,
-        email=inv.email,
-        role=inv.role.value,
-        status=inv.status.value,
-        invited_by=inv.invited_by,
-        invited_by_name=inv.inviter.full_name if inv.inviter else None,
-        suggested_sdlc_role=inv.suggested_sdlc_role,
-        expires_at=inv.expires_at,
-        created_at=inv.created_at,
-    )
 
 
 @router.post(
@@ -356,9 +339,10 @@ async def accept_invitation(
     if not current_user.email:
         raise ValidationError("User email is required to accept an invitation")
     result = await service.accept_invitation(
-        invitation_id=invitation_id,
-        user_id=current_user.user_id,
-        user_email=current_user.email,
+        AcceptInvitationPayload(
+            invitation_id=invitation_id,
+            user_id=current_user.user_id,
+        )
     )
     return InvitationAcceptResponse(
         workspace_slug=result.workspace_slug,

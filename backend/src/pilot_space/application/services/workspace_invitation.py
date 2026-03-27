@@ -162,6 +162,8 @@ class AcceptInvitationResult:
     """Result of accept_invitation operation."""
 
     workspace_slug: str
+    workspace_name: str
+    role: str
     requires_profile_completion: bool
 
 
@@ -529,6 +531,8 @@ class WorkspaceInvitationService:
 
         return AcceptInvitationResult(
             workspace_slug=workspace.slug,
+            workspace_name=workspace.name,
+            role=invitation.role.value,
             requires_profile_completion=requires_profile_completion,
         )
 
