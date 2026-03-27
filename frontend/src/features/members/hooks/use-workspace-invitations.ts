@@ -2,7 +2,6 @@
  * useWorkspaceInvitations - TanStack Query hook for workspace invitations.
  *
  * T025: Fetches pending invitations and provides cancel mutation.
- * S008: Adds acceptInvitation API function and useAcceptInvitation hook.
  * A4-E05: Returns PaginatedResponse<WorkspaceInvitation> from server-side pagination.
  * Follows use-workspace-members.ts pattern.
  */
@@ -27,12 +26,6 @@ export interface PaginatedInvitations {
   hasNext: boolean;
   hasPrev: boolean;
   pageSize: number;
-}
-
-export interface AcceptInvitationResponse {
-  workspace_id: string;
-  workspace_slug: string;
-  requires_profile_completion: boolean;
 }
 
 export interface InvitationPreviewResponse {
@@ -108,30 +101,8 @@ export function useCancelInvitation(workspaceId: string) {
 }
 
 /**
- * Accept a workspace invitation after Supabase magic-link authentication.
- * Called by the /auth/accept-invite page once the Supabase session is active.
- */
-export async function acceptInvitation(
-  invitationId: string,
-): Promise<AcceptInvitationResponse> {
-  return apiClient.post<AcceptInvitationResponse>(
-    `/auth/workspace-invitations/${invitationId}/accept`,
-  );
-}
-
-/**
- * useAcceptInvitation — mutation hook wrapping acceptInvitation().
- * On success, returns workspace_slug and requires_profile_completion flag.
- */
-export function useAcceptInvitation() {
-  return useMutation<AcceptInvitationResponse, Error, string>({
-    mutationFn: acceptInvitation,
-  });
-}
-
-/**
  * Preview an invitation without authentication.
- * Used by the /auth/invite page to show workspace name and detect status.
+ * Used by the /invite page to show workspace name and detect status.
  */
 export async function previewInvitation(
   invitationId: string,

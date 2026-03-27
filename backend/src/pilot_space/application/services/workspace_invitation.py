@@ -297,7 +297,7 @@ class WorkspaceInvitationService:
         Validates the invitation is PENDING and not expired, applies rate
         limiting (3 per hour per email), then calls Supabase
         `auth.admin.invite_user_by_email` with `redirect_to` pointing to
-        `/auth/accept-invite` for finalization.
+        `/accept-invite` for finalization.
 
         Args:
             payload: RequestMagicLinkPayload with invitation_id and email.
@@ -340,7 +340,7 @@ class WorkspaceInvitationService:
         settings = get_settings()
         supabase_client = await get_supabase_client()
         redirect_url = (
-            f"{settings.frontend_url}/auth/accept-invite"
+            f"{settings.frontend_url}/accept-invite"
             f"?invitation_id={invitation.id}"
             f"&workspace_id={invitation.workspace_id}"
         )

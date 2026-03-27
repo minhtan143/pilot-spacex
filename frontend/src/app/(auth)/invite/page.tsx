@@ -9,19 +9,19 @@
  *   3. If PENDING: shows email form ("Join [workspace_name]")
  *   4. On submit: calls POST /invitations/{id}/request-magic-link → shows success state
  *
- * US2: Existing user fast path (T012 adds this)
+ * US2: Existing user fast path
  *   - Detects existing Supabase session on mount
- *   - If SIGNED_IN: skips email form, calls acceptInvitation directly
+ *   - If SIGNED_IN: skips email form, shows SignupCompletionForm directly
  *
  * Source: FR-012, FR-013, spec.md US1, US2
  */
 
 import {
-  acceptInvitation,
   previewInvitation,
   requestMagicLink,
   type InvitationPreviewResponse,
 } from '@/features/members/hooks/use-workspace-invitations';
+import { SignupCompletionForm } from '@/features/auth/components/signup-completion-form';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,7 +35,7 @@ type PageState =
   | 'form'
   | 'submitting'
   | 'success'
-  | 'joining'
+  | 'complete_profile'
   | 'error_expired'
   | 'error_revoked'
   | 'error_accepted'
@@ -73,16 +73,8 @@ export default function InvitePage() {
       clearTimeout(debounceTimer);
 
       if (hasSession) {
-        // US2 fast path: existing session — skip email form
-        setPageState('joining');
-        acceptInvitation(invitationId)
-          .then((result) => {
-            router.push(`/${result.workspace_slug}`);
-          })
-          .catch((err) => {
-            const msg = err instanceof Error ? err.message : 'Failed to join workspace.';
-            handleError('error_generic', msg);
-          });
+        // US2 fast path: existing session — show completion form directly
+        setPageState('complete_profile');
       } else {
         // US1 path: no session — load preview then show email form
         previewInvitation(invitationId)
@@ -158,15 +150,33 @@ export default function InvitePage() {
     }
   };
 
+  // ── Complete profile (user needs name + password) ────────────────────────
+  if (pageState === 'complete_profile' && invitationId) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <div className="w-full max-w-md space-y-6">
+          <div className="space-y-2 text-center">
+            <h1 className="text-2xl font-semibold tracking-tight">Complete your account</h1>
+            <p className="text-sm text-muted-foreground">
+              Set your name and password to finish joining your workspace.
+            </p>
+          </div>
+          <SignupCompletionForm
+            invitationId={invitationId}
+            onComplete={(slug) => router.push(`/${slug}`)}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // ── Loading ──────────────────────────────────────────────────────────────
-  if (pageState === 'loading' || pageState === 'joining') {
+  if (pageState === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            {pageState === 'joining' ? 'Joining workspace…' : 'Loading invitation…'}
-          </p>
+          <p className="text-sm text-muted-foreground">Loading invitation…</p>
         </div>
       </div>
     );

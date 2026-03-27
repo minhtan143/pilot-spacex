@@ -37,12 +37,24 @@ vi.mock('@/lib/supabase', () => ({
 
 const mockPreviewInvitation = vi.fn();
 const mockRequestMagicLink = vi.fn();
-const mockAcceptInvitation = vi.fn();
 
 vi.mock('@/features/members/hooks/use-workspace-invitations', () => ({
   previewInvitation: (...args: unknown[]) => mockPreviewInvitation(...args),
   requestMagicLink: (...args: unknown[]) => mockRequestMagicLink(...args),
-  acceptInvitation: (...args: unknown[]) => mockAcceptInvitation(...args),
+}));
+
+vi.mock('@/features/auth/components/signup-completion-form', () => ({
+  SignupCompletionForm: ({
+    invitationId,
+    onComplete,
+  }: {
+    invitationId: string;
+    onComplete: (slug: string) => void;
+  }) => (
+    <div data-testid="signup-completion-form" data-invitation-id={invitationId}>
+      <button onClick={() => onComplete('acme-corp')}>Complete account</button>
+    </div>
+  ),
 }));
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -82,7 +94,6 @@ function setupExistingSession() {
 
 // ── Import page after mocks ───────────────────────────────────────────────
 // Must be dynamic due to hoisting requirements
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { default: InvitePage } = await import('../page');
 
 // ── Tests ────────────────────────────────────────────────────────────────
@@ -203,19 +214,35 @@ describe('InvitePage', () => {
     });
   });
 
-  it('existing session detected: skips form and calls acceptInvitation', async () => {
+  it('existing session detected: skips email form and shows SignupCompletionForm directly', async () => {
     setupExistingSession();
-    mockAcceptInvitation.mockResolvedValue({ workspace_slug: 'acme-corp', requires_profile_completion: false });
 
     render(<InvitePage />);
 
-    // Should show "joining workspace" spinner
     await waitFor(() => {
-      expect(screen.getByText(/joining workspace/i)).toBeInTheDocument();
+      expect(screen.getByTestId('signup-completion-form')).toBeInTheDocument();
     });
 
+    expect(screen.getByText(/complete your account/i)).toBeInTheDocument();
+  });
+
+  it('does NOT call router.push immediately when existing session is detected', async () => {
+    const mockPush = vi.fn();
+    vi.doMock('next/navigation', () => ({
+      useRouter: () => ({ push: mockPush }),
+      useSearchParams: () => ({
+        get: (key: string) => (key === 'invitation_id' ? 'test-invitation-id' : null),
+      }),
+    }));
+
+    setupExistingSession();
+
+    render(<InvitePage />);
+
     await waitFor(() => {
-      expect(mockAcceptInvitation).toHaveBeenCalledWith('test-invitation-id');
+      expect(screen.getByTestId('signup-completion-form')).toBeInTheDocument();
     });
+    // router.push should NOT have been called automatically — user must complete the form
+    expect(mockPush).not.toHaveBeenCalled();
   });
 });

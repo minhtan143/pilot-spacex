@@ -191,7 +191,7 @@ class InvitationResponse(BaseSchema):
 class InvitationPreviewResponse(BaseSchema):
     """Public preview of an invitation (no auth required).
 
-    Returns enough information for the /auth/invite page to render the
+    Returns enough information for the /invite page to render the
     workspace name and detect already-used/expired invitations.
 
     Attributes:
@@ -290,6 +290,26 @@ class WorkspaceMemberResponse(BaseSchema):
         default_factory=list,
         description="Project chips (id, name, identifier, is_archived) for FR-02",
     )
+
+
+class PaginatedMembersResponse(BaseSchema):
+    """Paginated workspace member list response (E-05)."""
+
+    items: list[WorkspaceMemberResponse]
+    total: int = Field(ge=0, description="Total matching member count")
+    page: int = Field(ge=1, description="Current page (1-indexed)")
+    page_size: int = Field(ge=1, description="Items per page")
+    total_pages: int = Field(ge=1, description="Total number of pages")
+
+
+class PaginatedInvitationsResponse(BaseSchema):
+    """Paginated workspace invitations list response (E-05)."""
+
+    items: list[Any]  # InvitationResponse — forward ref avoids circular import
+    total: int = Field(ge=0, description="Total pending invitation count")
+    page: int = Field(ge=1, description="Current page (1-indexed)")
+    page_size: int = Field(ge=1, description="Items per page")
+    total_pages: int = Field(ge=1, description="Total number of pages")
 
 
 class MemberContributionStats(BaseSchema):
@@ -641,6 +661,8 @@ __all__ = [
     "MemberActivityResponse",
     "MemberContributionStats",
     "MemberProfileResponse",
+    "PaginatedInvitationsResponse",
+    "PaginatedMembersResponse",
     "ProviderStatus",
     "RequestMagicLinkRequest",
     "RequestMagicLinkResponse",

@@ -14,6 +14,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from pilot_space.api.v1.dependencies import AuthServiceDep
@@ -43,11 +44,21 @@ from pilot_space.application.services.workspace_invitation import (
     WorkspaceInvitationService,
 )
 from pilot_space.dependencies import CurrentUser
-from pilot_space.dependencies.auth import SessionDep
-from pilot_space.domain.exceptions import ConflictError, NotFoundError
+from pilot_space.dependencies.auth import SessionDep, SyncedUserId
+from pilot_space.domain.exceptions import NotFoundError
+from pilot_space.infrastructure.database.models.workspace_invitation import InvitationStatus
 from pilot_space.infrastructure.database.models.workspace_member import WorkspaceMember
+from pilot_space.infrastructure.supabase_client import get_supabase_client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+class CompleteSignupRequest(BaseModel):
+    """Request body for POST /auth/complete-signup."""
+
+    invitation_id: UUID
+    full_name: str = Field(min_length=2, max_length=255)
+    password: str = Field(min_length=8, description="Password for the new account")
 
 
 @router.get("/login", tags=["auth"])
@@ -322,66 +333,72 @@ async def validate_api_key(
 
 
 @router.post(
-    "/workspace-invitations/{invitation_id}/accept",
+    "/complete-signup",
     tags=["auth", "invitations"],
     status_code=status.HTTP_200_OK,
 )
-async def accept_workspace_invitation(
-    invitation_id: str,
+async def complete_signup(
+    request: CompleteSignupRequest,
     session: SessionDep,
-    current_user: CurrentUser,
+    synced_user_id: SyncedUserId,
+    service: AuthServiceDep,
     invitation_repo: InvitationRepositoryDep,
     workspace_repo: WorkspaceRepositoryDep,
     user_repo: UserRepositoryDep,
-) -> dict[str, object]:
-    """Accept a workspace invitation after Supabase magic-link authentication.
+) -> dict[str, str]:
+    """Complete signup for a new user arriving via workspace invitation.
 
-    Called by the /auth/accept-invite frontend page once the Supabase session
-    is established via the magic link. Adds the user to the workspace and
-    materializes any project assignments.
+    Atomically updates the user's full name, sets password via Supabase Admin API,
+    and accepts the workspace invitation. For new users, the invitation is
+    auto-accepted by SyncedUserId before this body executes. For existing users
+    whose invitation is still PENDING, explicit acceptance is performed here.
 
     Returns:
-        workspace_slug: Slug to redirect to after acceptance.
-        requires_profile_completion: True if user must provide a full name.
+        workspace_slug: Slug to redirect to after completion.
 
     Raises:
-        HTTPException 404: Invitation not found.
-        HTTPException 409: Invitation already accepted or cancelled.
+        NotFoundError (404): Invitation not found or workspace not found.
+        ConflictError (409): Invitation already accepted or cancelled.
     """
-    from uuid import UUID
-
-    try:
-        inv_uuid = UUID(invitation_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Invitation not found",
-        ) from exc
-
-    svc = WorkspaceInvitationService(
-        workspace_repo=workspace_repo,
-        invitation_repo=invitation_repo,
-        user_repo=user_repo,
+    await service.update_profile(
+        UpdateProfilePayload(
+            user_id=synced_user_id,
+            full_name=request.full_name,
+        )
     )
 
-    try:
+    supabase_client = await get_supabase_client()
+    await supabase_client.auth.admin.update_user_by_id(
+        str(synced_user_id),
+        {"password": request.password},
+    )
+
+    invitation = await invitation_repo.get_by_id(request.invitation_id)
+    if invitation is None:
+        raise NotFoundError("Invitation not found")
+
+    if invitation.status == InvitationStatus.PENDING:
+        svc = WorkspaceInvitationService(
+            workspace_repo=workspace_repo,
+            invitation_repo=invitation_repo,
+            user_repo=user_repo,
+        )
         result = await svc.accept_invitation(
             AcceptInvitationPayload(
-                invitation_id=inv_uuid,
-                user_id=current_user.user_id,
+                invitation_id=request.invitation_id,
+                user_id=synced_user_id,
             )
         )
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except ConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        workspace_slug = result.workspace_slug
+    else:
+        workspace = await workspace_repo.get_by_id(invitation.workspace_id)
+        if workspace is None:
+            raise NotFoundError("Workspace not found")
+        workspace_slug = workspace.slug
 
     await session.commit()
 
-    return {
-        "workspace_slug": result.workspace_slug,
-        "requires_profile_completion": result.requires_profile_completion,
-    }
+    return {"workspace_slug": workspace_slug}
 
 
 __all__ = ["router"]

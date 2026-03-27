@@ -1,6 +1,6 @@
 """Public invitation endpoints (no authentication required).
 
-Provides unauthenticated endpoints for the /auth/invite page to:
+Provides unauthenticated endpoints for the /invite page to:
 1. Preview invitation details (workspace name, status, masked email)
 2. Request a Supabase magic link for a pending invitation
 
@@ -80,7 +80,7 @@ def _mask_email(email: str) -> str:
     summary="Preview invitation details (public)",
     description=(
         "Returns workspace name and masked invited email for display on the "
-        "/auth/invite page. No authentication required. Returns 404 if the "
+        "/invite page. No authentication required. Returns 404 if the "
         "invitation does not exist, 410 if it is no longer actionable."
     ),
 )
