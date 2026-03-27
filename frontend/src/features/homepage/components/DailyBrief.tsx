@@ -537,8 +537,12 @@ export const DailyBrief = observer(function DailyBrief({ workspaceSlug }: DailyB
       />
 
       {/* My Projects (T036 - RBAC assigned projects) */}
-      <SectionDivider />
-      <MyProjectsSection workspaceId={workspaceId} workspaceSlug={workspaceSlug} />
+      {showProjectsSection && (
+        <>
+          <SectionDivider />
+          <MyProjectsSection workspaceId={workspaceId} workspaceSlug={workspaceSlug} />
+        </>
+      )}
     </article>
   );
 });

@@ -334,17 +334,17 @@ class PaginatedMembersResponse(BaseSchema):
     total: int = Field(ge=0, description="Total matching member count")
     page: int = Field(ge=1, description="Current page (1-indexed)")
     page_size: int = Field(ge=1, description="Items per page")
-    total_pages: int = Field(ge=1, description="Total number of pages")
+    total_pages: int = Field(ge=0, description="Total number of pages")
 
 
 class PaginatedInvitationsResponse(BaseSchema):
     """Paginated workspace invitations list response (E-05)."""
 
-    items: list[Any]  # InvitationResponse — forward ref avoids circular import
+    items: list[InvitationResponse]
     total: int = Field(ge=0, description="Total pending invitation count")
     page: int = Field(ge=1, description="Current page (1-indexed)")
     page_size: int = Field(ge=1, description="Items per page")
-    total_pages: int = Field(ge=1, description="Total number of pages")
+    total_pages: int = Field(ge=0, description="Total number of pages")
 
 
 class MemberContributionStats(BaseSchema):

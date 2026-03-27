@@ -45,7 +45,7 @@ from pilot_space.application.services.workspace_invitation import (
 )
 from pilot_space.dependencies import CurrentUser
 from pilot_space.dependencies.auth import SessionDep, SyncedUserId
-from pilot_space.domain.exceptions import NotFoundError
+from pilot_space.domain.exceptions import ConflictError, NotFoundError
 from pilot_space.infrastructure.database.models.workspace_invitation import InvitationStatus
 from pilot_space.infrastructure.database.models.workspace_member import WorkspaceMember
 from pilot_space.infrastructure.supabase_client import get_supabase_client
@@ -360,10 +360,12 @@ async def complete_signup(
         NotFoundError (404): Invitation not found or workspace not found.
         ConflictError (409): Invitation already accepted or cancelled.
     """
-    # Preflight: validate invitation exists before touching external systems
+    # Preflight: validate invitation exists and is still pending before touching external systems
     invitation = await invitation_repo.get_by_id(request.invitation_id)
     if invitation is None:
         raise NotFoundError("Invitation not found")
+    if invitation.status not in (InvitationStatus.PENDING, InvitationStatus.ACCEPTED):
+        raise ConflictError("Invitation has been cancelled or expired")
 
     await service.update_profile(
         UpdateProfilePayload(
