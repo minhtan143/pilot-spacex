@@ -365,7 +365,8 @@ class PilotSpaceAgent(StreamingSDKBaseAgent[ChatInput, ChatOutput]):
 
         from pilot_space.ai.exceptions import AINotConfiguredError
 
-        if workspace_id is not None:
+        _NIL_UUID = UUID("00000000-0000-0000-0000-000000000000")
+        if workspace_id is not None and workspace_id != _NIL_UUID:
             try:
                 from pilot_space.ai.infrastructure.key_storage import SecureKeyStorage
                 from pilot_space.config import get_settings
