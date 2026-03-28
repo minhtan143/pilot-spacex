@@ -169,14 +169,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     queue_client = container.queue_client()
     if queue_client and redis_client:
         from pilot_space.infrastructure.queue.models import QueueName
-        from pilot_space.infrastructure.queue.supabase_queue import QueueConnectionError
+        from pilot_space.infrastructure.queue.supabase_queue import (
+            QueueConnectionError,
+            QueueOperationError,
+        )
 
         try:
             await queue_client.create_queue(QueueName.AI_LOW)
             await queue_client.create_queue(QueueName.AI_NORMAL)
             await queue_client.create_queue(QueueName.NOTIFICATIONS)
             await queue_client.create_queue(QueueName.DEAD_LETTER)
-        except QueueConnectionError:
+        except (QueueConnectionError, QueueOperationError):
             logger.warning("Queue unavailable — workers will not start (degraded mode)")
             queue_client = None
 
