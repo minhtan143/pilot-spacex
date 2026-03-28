@@ -25,11 +25,17 @@ from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 from pilot_space.ai.agents.agent_base import AgentContext, StreamingSDKBaseAgent
 from pilot_space.ai.context import clear_context, set_workspace_context
 from pilot_space.ai.sdk.config import MODEL_SONNET, build_sdk_env
+from pilot_space.config import get_settings
 
 _logger = structlog.get_logger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+    from pilot_space.ai.infrastructure.cost_tracker import CostTracker
+    from pilot_space.ai.infrastructure.key_storage import SecureKeyStorage
+    from pilot_space.ai.infrastructure.resilience import ResilientExecutor
+    from pilot_space.ai.providers.provider_selector import ProviderSelector
 
 
 @dataclass
@@ -147,6 +153,20 @@ class PRReviewSubagent(StreamingSDKBaseAgent[PRReviewInput, PRReviewOutput]):
     AGENT_NAME = "pr_review_subagent"
     DEFAULT_MODEL = MODEL_SONNET
 
+    def __init__(
+        self,
+        provider_selector: ProviderSelector,
+        cost_tracker: CostTracker,
+        resilient_executor: ResilientExecutor,
+        key_storage: SecureKeyStorage | None = None,
+    ) -> None:
+        super().__init__(
+            provider_selector=provider_selector,
+            cost_tracker=cost_tracker,
+            resilient_executor=resilient_executor,
+        )
+        self._key_storage = key_storage
+
     def get_system_prompt(self) -> str:
         """Get system prompt for PR review.
 
@@ -224,36 +244,39 @@ production reliability, security, or maintainability."""
             },
         ]
 
-    async def _get_api_key(self, workspace_id: UUID | None) -> str:
-        """Get Anthropic API key for this request.
+    async def _get_provider_config(
+        self, workspace_id: UUID | None
+    ) -> tuple[str, str | None, str | None]:
+        """Resolve API key, base_url, and model_name from workspace BYOK storage.
 
         AIGOV-05 BYOK enforcement:
-        - workspace_id provided → BYOK required; raises AINotConfiguredError if missing.
-          No env fallback — using the platform key for workspace calls violates BYOK.
-        - workspace_id=None → system agent; env key permitted.
-
-        Args:
-            workspace_id: Workspace UUID, or None for system-level operations.
+        - workspace_id provided + key_storage available -> BYOK key + base_url + model_name
+        - workspace_id provided + no key_storage -> raise AINotConfiguredError
+        - workspace_id=None -> system agent; env key permitted, no base_url
 
         Returns:
-            Decrypted API key string.
-
-        Raises:
-            AINotConfiguredError: If workspace has no BYOK key or system has no env key.
+            (api_key, base_url, model_name) — base_url/model_name may be None.
         """
         from pilot_space.ai.exceptions import AINotConfiguredError
 
         if workspace_id is not None:
-            # Workspace-scoped call: BYOK required, no env fallback (AIGOV-05).
-            # TODO Phase 4 (04-07): Wire key_storage via DI; for now raise immediately
-            # when workspace_id is provided and there's no env override for tests.
+            if self._key_storage is not None:
+                key_info = await self._key_storage.get_key_info(workspace_id, "anthropic", "llm")
+                api_key = await self._key_storage.get_api_key(workspace_id, "anthropic", "llm")
+                # Support Ollama/custom-proxy: base_url-only entries (no API key required)
+                if key_info and (api_key or key_info.base_url):
+                    return (
+                        api_key or "no-key-required",
+                        key_info.base_url,
+                        getattr(key_info, "model_name", None),
+                    )
             raise AINotConfiguredError(workspace_id=workspace_id)
 
         # System-only: env key permitted
-        api_key = os.getenv("ANTHROPIC_API_KEY")  # _SYSTEM_ONLY: never for workspace calls
+        api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise AINotConfiguredError(workspace_id=None)
-        return api_key
+        return api_key, None, None
 
     def _build_prompt(self, input_data: PRReviewInput) -> str:
         """Build PR review prompt from input data.
@@ -392,15 +415,25 @@ Be constructive and focus on production reliability, security, and maintainabili
             SSE chunks with review findings
         """
         try:
-            # Get API key from context
-            api_key = await self._get_api_key(context.workspace_id)
+            # Get API key and base_url from workspace BYOK storage
+            api_key, base_url, model_name = await self._get_provider_config(context.workspace_id)
 
             # Build prompt specific to PR review
             prompt = self._build_prompt(input_data)
 
             # Create SDK options with env parameter (no os.environ mutation)
             sdk_options = self._create_agent_options(context)
-            sdk_options.env = build_sdk_env(api_key)
+            if model_name:
+                sdk_options.model = model_name
+            # Proxy routing — route through built-in proxy when enabled.
+            # workspace_id is encoded in the URL path (no custom headers needed).
+            _settings = get_settings()
+            if _settings.ai_proxy_enabled:
+                proxy_url = f"{_settings.ai_proxy_base_url}/{context.workspace_id}/"
+                sdk_options.env = build_sdk_env(api_key, base_url=proxy_url)
+                _logger.info("pr_review_proxy_routed", proxy_url=proxy_url)
+            else:
+                sdk_options.env = build_sdk_env(api_key, base_url=base_url)
 
             # Set context for observability
             set_workspace_context(context.workspace_id, context.user_id)

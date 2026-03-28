@@ -73,6 +73,8 @@ if TYPE_CHECKING:
     from pilot_space.infrastructure.queue.supabase_queue import SupabaseQueueClient
     from pilot_space.spaces.base import SpaceContext
 
+from pilot_space.domain.constants import SYSTEM_USER_ID
+
 logger = get_logger(__name__)
 
 
@@ -85,6 +87,9 @@ async def _background_graph_extraction(
     anthropic_api_key: str | None = None,
     base_url: str | None = None,
     model_name: str | None = None,
+    llm_gateway: Any | None = None,
+    resilient_executor: Any | None = None,
+    encryption_key: str | None = None,
 ) -> None:
     """Run graph extraction in a background task with its own DB session.
 
@@ -111,20 +116,44 @@ async def _background_graph_extraction(
         from pilot_space.infrastructure.database import get_db_session
         from pilot_space.infrastructure.database.rls import set_rls_context
 
-        # Phase 1: LLM call — outside DB session to avoid holding a connection
-        # for the full ~20-25s extraction round-trip.
-        extraction_svc = GraphExtractionService()
-        result = await extraction_svc.execute(
-            ConversationExtractionPayload(
-                messages=messages,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                issue_id=issue_id,
-                api_key=anthropic_api_key or "ollama",
-                base_url=base_url,
-                model_name=model_name,
+        # Construct LLMGateway for background task (same pattern as DigestJobHandler).
+        # The session must stay open through extraction because LLMGateway needs
+        # SecureKeyStorage (DB-backed) for BYOK key lookup during the LLM call.
+        _bg_key_session_cm = None
+        if llm_gateway is None and resilient_executor is not None and encryption_key is not None:
+            from pilot_space.ai.infrastructure.cost_tracker import CostTracker
+            from pilot_space.ai.infrastructure.key_storage import SecureKeyStorage
+            from pilot_space.ai.proxy.llm_gateway import LLMGateway
+
+            _bg_key_session_cm = get_db_session()
+            bg_key_session = await _bg_key_session_cm.__aenter__()
+            await set_rls_context(bg_key_session, user_id or SYSTEM_USER_ID, workspace_id)
+            bg_key_storage = SecureKeyStorage(db=bg_key_session, master_secret=encryption_key)
+            bg_cost_tracker = CostTracker(session=bg_key_session)
+            llm_gateway = LLMGateway(
+                executor=resilient_executor,
+                cost_tracker=bg_cost_tracker,
+                key_storage=bg_key_storage,
             )
-        )
+
+        try:
+            # Phase 1: LLM call — uses LLMGateway for BYOK key resolution.
+            extraction_svc = GraphExtractionService(llm_gateway=llm_gateway)
+            result = await extraction_svc.execute(
+                ConversationExtractionPayload(
+                    messages=messages,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    issue_id=issue_id,
+                    api_key=anthropic_api_key or "ollama",
+                    base_url=base_url,
+                    model_name=model_name,
+                )
+            )
+        finally:
+            # Close the key-storage session after extraction completes
+            if _bg_key_session_cm is not None:
+                await _bg_key_session_cm.__aexit__(None, None, None)
 
         if not result.nodes:
             logger.debug(
@@ -750,17 +779,30 @@ class PilotSpaceAgent(StreamingSDKBaseAgent[ChatInput, ChatOutput]):
             )
         )
 
-        # Build env with workspace provider's API key and base URL
+        # Build env with workspace provider's API key and base URL.
+        # When ai_proxy_enabled=True, route SDK calls through the built-in
+        # proxy endpoint for unified cost tracking and observability.
+        from pilot_space.config import get_settings
+
+        _settings = get_settings()
         provider_env: dict[str, str] = {
             "ANTHROPIC_API_KEY": provider_config.api_key,
         }
-        if provider_config.base_url:
+        if _settings.ai_proxy_enabled:
+            proxy_url = f"{_settings.ai_proxy_base_url}/{context.workspace_id}/"
+            provider_env["ANTHROPIC_BASE_URL"] = proxy_url
+            logger.info(
+                "[SDK/Space] AI Proxy enabled: routing through %s",
+                proxy_url,
+            )
+        elif provider_config.base_url:
             provider_env["ANTHROPIC_BASE_URL"] = provider_config.base_url
         logger.info(
-            "[SDK/Space] Provider: %s, has_base_url=%s, model=%s",
+            "[SDK/Space] Provider: %s, has_base_url=%s, model=%s, proxy=%s",
             provider_config.provider,
             bool(provider_config.base_url),
             provider_config.model_name or "default",
+            _settings.ai_proxy_enabled,
         )
 
         sdk_config = configure_sdk_for_space(
@@ -1108,6 +1150,8 @@ class PilotSpaceAgent(StreamingSDKBaseAgent[ChatInput, ChatOutput]):
                                         if isinstance(_ctx_issue, UUID)
                                         else UUID(str(_ctx_issue))
                                     )
+                                from pilot_space.config import get_settings
+
                                 _bg_task = asyncio.create_task(
                                     _background_graph_extraction(
                                         graph_queue_client=self._graph_queue_client,
@@ -1121,6 +1165,8 @@ class PilotSpaceAgent(StreamingSDKBaseAgent[ChatInput, ChatOutput]):
                                         anthropic_api_key=provider_config.api_key,
                                         base_url=provider_config.base_url,
                                         model_name=provider_config.model_name,
+                                        resilient_executor=self._resilient_executor,
+                                        encryption_key=get_settings().encryption_key.get_secret_value(),
                                     )
                                 )
                                 # Keep a strong reference so asyncio's weak-ref

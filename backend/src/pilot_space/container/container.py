@@ -111,6 +111,7 @@ from pilot_space.application.services.project_detail import ProjectDetailService
 from pilot_space.application.services.rate_limit import RateLimitService
 from pilot_space.application.services.rbac_service import RbacService
 from pilot_space.application.services.related_issues import RelatedIssuesSuggestionService
+from pilot_space.application.services.role_skill import GenerateRoleSkillService
 from pilot_space.application.services.scim_service import ScimService
 from pilot_space.application.services.sprint_board import SprintBoardService
 from pilot_space.application.services.sso_service import SsoService
@@ -135,9 +136,11 @@ from pilot_space.config import Settings
 from pilot_space.container._base import InfraContainer
 from pilot_space.container._factories import (
     create_anthropic_client_pool,
+    create_llm_gateway,
     create_pilotspace_agent,
     create_provider_selector,
     create_resilient_executor,
+    create_secure_key_storage,
     create_session_manager,
     create_space_manager,
     create_tool_registry,
@@ -198,6 +201,16 @@ class Container(SkillContainer, PluginContainer):
             "pilot_space.api.v1.routers.project_artifacts",
             "pilot_space.api.v1.routers.artifact_annotations",
             "pilot_space.api.v1.routers.notes_ai",
+            "pilot_space.api.v1.routers.ai_extraction",
+            # LLMGateway migration targets (Plan 47-02)
+            "pilot_space.application.services.note.contextual_enrichment",
+            "pilot_space.application.services.extraction.extract_issues_service",
+            "pilot_space.application.services.memory.graph_extraction_service",
+            "pilot_space.application.services.intent.detection_service",
+            "pilot_space.application.services.role_skill.generate_role_skill_service",
+            "pilot_space.application.services.version.digest_service",
+            "pilot_space.ai.jobs.digest_job",
+            "pilot_space.application.services.embedding_service",
         ],
     )
 
@@ -233,6 +246,17 @@ class Container(SkillContainer, PluginContainer):
     cost_tracker = providers.Factory(
         CostTracker,
         session=providers.Callable(get_current_session),
+    )
+
+    # Secure Key Storage — Factory per request (session-bound)
+    secure_key_storage = providers.Factory(create_secure_key_storage)
+
+    # LLM Gateway (Plan 47) — Factory per request (cost_tracker + key_storage are session-bound)
+    llm_gateway = providers.Factory(
+        create_llm_gateway,
+        executor=resilient_executor,
+        cost_tracker=cost_tracker,
+        key_storage=secure_key_storage,
     )
 
     # AI Approval Service (DD-003) — Factory per request
@@ -808,6 +832,14 @@ class Container(SkillContainer, PluginContainer):
         session=providers.Callable(get_current_session),
         intent_repository=InfraContainer.work_intent_repository,
         redis_client=InfraContainer.redis_client,
+        llm_gateway=llm_gateway,
+    )
+
+    # Override SkillContainer's generate_role_skill_service to inject llm_gateway
+    generate_role_skill_service = providers.Factory(
+        GenerateRoleSkillService,
+        session=providers.Callable(get_current_session),
+        llm_gateway=llm_gateway,
     )
 
     intent_service = providers.Factory(
@@ -840,6 +872,7 @@ class Container(SkillContainer, PluginContainer):
         VersionDigestService,
         session=providers.Callable(get_current_session),
         version_repo=InfraContainer.note_version_repository,
+        llm_gateway=llm_gateway,
     )
 
     version_restore_service = providers.Factory(

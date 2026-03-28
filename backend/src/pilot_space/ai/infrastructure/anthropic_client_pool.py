@@ -70,7 +70,7 @@ class AnthropicClientPool:
             self._clients[slot] = anthropic.AsyncAnthropic(**kwargs)
         return self._clients[slot]
 
-    def evict(self, api_key: str) -> bool:
+    def evict(self, api_key: str, base_url: str | None = None) -> bool:
         """Remove cached client for an API key.
 
         Call after key rotation to ensure the old client (and its httpx
@@ -78,6 +78,7 @@ class AnthropicClientPool:
 
         Args:
             api_key: The API key whose client should be evicted.
+            base_url: Optional custom base URL (must match get_client call).
 
         Returns:
             True if a client was found and removed, False if the key was
