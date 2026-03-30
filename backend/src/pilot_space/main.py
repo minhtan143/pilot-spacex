@@ -128,6 +128,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     container.wire(modules=container.wiring_config.modules)
 
     app.state.container = container
+
+    # Share DI container with the AI proxy sub-application so it can
+    # resolve services (resilient_executor, cost_tracker, key_storage, redis).
+    from pilot_space.ai.proxy.app import proxy_app as _proxy_app
+
+    _proxy_app.state.container = container
+
     settings = get_settings()
 
     # Configure structured logging first
@@ -222,6 +229,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     question_adapter = get_question_adapter()
     await question_adapter.start_cleanup_task(interval_seconds=60.0)
 
+    # Configure Langfuse LLM observability (safe when not configured)
+    from pilot_space.ai.proxy.tracing import configure_langfuse
+
+    configure_langfuse()
+
     # Log startup completion
     logger.info(
         "application_ready",
@@ -232,6 +244,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Shutdown: Clean up workers and connections
     logger.info("application_shutdown_start")
+
+    # Flush Langfuse pending events
+    from pilot_space.ai.proxy.tracing import flush_langfuse
+
+    flush_langfuse()
     await question_adapter.stop_cleanup_task()
     if digest_worker:
         await digest_worker.stop()
@@ -395,6 +412,12 @@ app.include_router(skill_approvals_router, prefix=f"{API_V1_PREFIX}/workspaces")
 app.include_router(notifications_router, prefix=f"{API_V1_PREFIX}/workspaces")
 if debug_router:
     app.include_router(debug_router, prefix=API_V1_PREFIX)
+
+# AI Proxy sub-application — mounted as a separate ASGI app so it gets its
+# own exception handlers and can be deployed independently if needed.
+from pilot_space.ai.proxy.app import proxy_app  # noqa: E402
+
+app.mount(f"{API_V1_PREFIX}/ai/proxy", proxy_app)
 
 
 def cli() -> None:

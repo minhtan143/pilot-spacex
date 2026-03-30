@@ -179,7 +179,7 @@ def get_model_for_task(task_type: str) -> str:
     return tier_or_id
 
 
-def build_sdk_env(api_key: str) -> dict[str, str]:
+def build_sdk_env(api_key: str, base_url: str | None = None) -> dict[str, str]:
     """Build minimal env dict for SDK subprocess with base URL forwarding.
 
     Centralizes the env dict pattern used by ai_context_agent,
@@ -188,6 +188,8 @@ def build_sdk_env(api_key: str) -> dict[str, str]:
 
     Args:
         api_key: Anthropic API key for the workspace.
+        base_url: Optional explicit base URL (workspace BYOK). Takes priority
+            over app-level ``anthropic_base_url`` setting.
 
     Returns:
         Environment dict for SDK subprocess execution.
@@ -199,9 +201,22 @@ def build_sdk_env(api_key: str) -> dict[str, str]:
     }
     from pilot_space.config import get_settings
 
-    base_url = get_settings().anthropic_base_url
+    app_base_url = get_settings().anthropic_base_url
+    if app_base_url:
+        env["ANTHROPIC_BASE_URL"] = app_base_url
+
+    # Explicit base_url takes priority over app-level setting.
+    # Validate to prevent SSRF / key exfiltration to arbitrary hosts.
     if base_url:
-        env["ANTHROPIC_BASE_URL"] = base_url
+        try:
+            env["ANTHROPIC_BASE_URL"] = validate_base_url(base_url)
+        except ValueError:
+            # Allow localhost for Ollama local dev (HTTPS-only for remote)
+            if base_url.startswith(("http://localhost", "http://127.0.0.1")):
+                env["ANTHROPIC_BASE_URL"] = base_url
+            else:
+                raise
+
     return env
 
 

@@ -10,8 +10,10 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
+from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Request
 
+from pilot_space.ai.proxy.llm_gateway import LLMGateway
 from pilot_space.api.middleware.request_context import CorrelationId, WorkspaceId
 from pilot_space.api.utils.sse import SSEResponse, SSEStreamBuilder
 from pilot_space.api.v1.dependencies import CreateExtractedIssuesServiceDep
@@ -25,6 +27,7 @@ from pilot_space.application.services.ai_extraction import (
     CreateExtractedIssuesPayload,
     ExtractedIssueInput,
 )
+from pilot_space.container import Container
 from pilot_space.dependencies import (
     CurrentUserId,
 )
@@ -34,6 +37,17 @@ from pilot_space.infrastructure.logging import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["AI Extraction"])
+
+
+# DI bridge: @inject makes Provide[] resolvable; FastAPI sees a plain callable.
+@inject
+def _get_llm_gateway(
+    gw: LLMGateway = Depends(Provide[Container.llm_gateway]),
+) -> LLMGateway:
+    return gw
+
+
+LLMGatewayDep = Annotated[LLMGateway, Depends(_get_llm_gateway)]
 
 
 @router.post(
@@ -50,6 +64,7 @@ async def extract_issues_stream(
     current_user_id: CurrentUserId,
     request: Request,
     session: SessionDep,
+    llm_gateway: LLMGatewayDep,
     _member: Annotated[UUID, Depends(require_workspace_member)],
 ) -> SSEResponse:
     """Extract issues from note content with confidence tags.
@@ -71,7 +86,7 @@ async def extract_issues_stream(
         )
 
         try:
-            service = IssueExtractionService(session=session)
+            service = IssueExtractionService(session=session, llm_gateway=llm_gateway)
             payload = ExtractIssuesPayload(
                 workspace_id=workspace_id,
                 note_id=note_id,

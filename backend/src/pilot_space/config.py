@@ -107,11 +107,26 @@ class Settings(BaseSettings):
         description="Default Google AI API key (Gemini)",
     )
 
+    # Langfuse LLM Observability (optional -- leave empty to disable)
+    langfuse_secret_key: str = ""
+    langfuse_public_key: str = ""
+    langfuse_host: str = "http://localhost:3001"
+
     # AI Configuration
     ai_timeout_seconds: int = Field(default=300, ge=30, le=600)
     ai_max_retries: int = Field(default=3, ge=1, le=10)
     ai_ghost_text_debounce_ms: int = Field(default=500, ge=100, le=2000)
     ai_ghost_text_max_tokens: int = Field(default=50, ge=10, le=200)
+
+    # Built-in AI Proxy — routes Claude Agent SDK through LLMGateway infrastructure
+    ai_proxy_enabled: bool = Field(
+        default=True,
+        description="Route all LLM calls through built-in AI proxy for cost tracking, tenant validation, and observability",
+    )
+    ai_proxy_base_url: str = Field(
+        default="http://localhost:8000/api/v1/ai/proxy",
+        description="Base URL of the built-in AI proxy endpoint (must match app host:port)",
+    )
 
     # Fake AI Mode (development only - no external API calls)
     ai_fake_mode: bool = Field(
