@@ -53,6 +53,10 @@ from pilot_space.ai.mcp.project_server import (
     SERVER_NAME as PROJECT_SERVER_NAME,
     create_project_tools_server,
 )
+from pilot_space.ai.mcp.skill_server import (
+    SERVER_NAME as SKILL_SERVER_NAME,
+    create_skill_tools_server,
+)
 from pilot_space.infrastructure.logging import get_logger
 
 if TYPE_CHECKING:
@@ -92,7 +96,7 @@ def build_mcp_servers(
     """Build the MCP server dict and block-reference map for an SDK session.
 
     Constructs a ¶N block reference map from the note context (if present)
-    and instantiates all 8 MCP tool servers (7 domain + 1 interaction).
+    and instantiates all 9 MCP tool servers (8 domain + 1 interaction).
 
     When *feature_toggles* is provided, servers whose feature module is
     disabled are excluded from the returned dict.  ``None`` (no stored config)
@@ -162,6 +166,15 @@ def build_mcp_servers(
             tool_context=tool_context,
         )
 
+    # Skill creator tools — registered unconditionally (no feature toggle).
+    # Unlike issue/project servers, skill creation is a core agent capability
+    # available to all workspaces. The tools handle skills_dir=None gracefully.
+    servers[SKILL_SERVER_NAME] = create_skill_tools_server(
+        publisher,
+        tool_context=tool_context,
+        skills_dir=None,  # TODO: pass from agent config when SpaceManager available
+    )
+
     return servers, ref_map
 
 
@@ -196,9 +209,13 @@ def classify_effort(message: str) -> str | None:
 
 
 def detect_skill_from_message(message: str) -> str | None:
-    """Detect slash-command skill invocation, returning skill name or None."""
+    """Detect slash-command skill invocation, returning skill name or None.
+
+    Handles both ``/skill-name`` and ``\\skill-name`` prefixes (frontend
+    uses backslash for the skill picker menu).
+    """
     msg_stripped = message.strip()
-    if msg_stripped.startswith("/"):
+    if msg_stripped.startswith(("/", "\\")):
         parts = msg_stripped[1:].split(None, 1)
         return parts[0] if parts else None
     return None

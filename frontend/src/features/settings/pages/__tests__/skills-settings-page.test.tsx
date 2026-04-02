@@ -110,6 +110,52 @@ vi.mock('@/components/role-skill/role-icons', () => ({
   },
 }));
 
+// Mock ChatView (lazy-loaded in skills page)
+vi.mock('@/features/ai/ChatView/ChatView', () => ({
+  ChatView: function MockChatView() {
+    return React.createElement('div', { 'data-testid': 'chat-view' }, 'Mock ChatView');
+  },
+}));
+
+// Mock AI store
+vi.mock('@/stores/ai/AIStore', () => ({
+  getAIStore: () => ({
+    pilotSpace: {
+      workspaceId: null,
+      setWorkspaceId: vi.fn(),
+    },
+    approval: {},
+  }),
+}));
+
+// Mock useMediaQuery — default to desktop (not small screen)
+vi.mock('@/hooks/useMediaQuery', () => ({
+  useMediaQuery: () => false,
+}));
+
+// Mock ResizablePanel components
+vi.mock('@/components/ui/resizable', () => ({
+  ResizablePanelGroup: ({ children, ...props }: { children: React.ReactNode }) =>
+    React.createElement('div', { 'data-testid': 'resizable-panel-group', ...props }, children),
+  ResizablePanel: ({ children, ...props }: { children: React.ReactNode }) =>
+    React.createElement('div', { 'data-testid': 'resizable-panel', ...props }, children),
+  ResizableHandle: () => React.createElement('div', { 'data-testid': 'resizable-handle' }),
+}));
+
+// Mock CollapsedChatStrip
+vi.mock('@/components/editor/CollapsedChatStrip', () => ({
+  CollapsedChatStrip: ({ onClick }: { onClick: () => void }) =>
+    React.createElement('button', { 'data-testid': 'collapsed-chat-strip', onClick }, 'PilotSpace Agent'),
+}));
+
+// Mock motion
+vi.mock('motion/react', () => ({
+  motion: {
+    aside: ({ children, ...props }: { children: React.ReactNode }) =>
+      React.createElement('aside', props, children),
+  },
+}));
+
 import { SkillsSettingsPage } from '../skills-settings-page';
 
 function createWrapper() {
@@ -220,18 +266,6 @@ describe('SkillsSettingsPage', () => {
       expect(screen.getByText('Custom Skill')).toBeInTheDocument();
     });
 
-    it('should render Add Skill button', () => {
-      mockUserSkills.mockReturnValue({
-        data: mockUserSkillsList,
-        isLoading: false,
-        isError: false,
-        error: null,
-      });
-
-      renderPage();
-      expect(screen.getByRole('button', { name: /Add Skill/ })).toBeEnabled();
-    });
-
     it('should show Skill Templates section heading', () => {
       mockUserSkills.mockReturnValue({
         data: [],
@@ -285,6 +319,55 @@ describe('SkillsSettingsPage', () => {
 
       renderPage();
       expect(screen.queryByRole('button', { name: /Create Template/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Create Skill button', () => {
+    it('should render "Create Skill" button on skills tab', () => {
+      mockUserSkills.mockReturnValue({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      });
+
+      renderPage();
+      expect(screen.getByRole('button', { name: /Create Skill/ })).toBeInTheDocument();
+    });
+
+    it('should open ChatView panel when Create Skill is clicked', async () => {
+      const user = userEvent.setup();
+      mockUserSkills.mockReturnValue({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      });
+
+      renderPage();
+      // Initially shows collapsed chat strip (desktop, chat closed)
+      expect(screen.getByTestId('collapsed-chat-strip')).toBeInTheDocument();
+
+      const createSkillBtn = screen.getByRole('button', { name: /Create Skill/ });
+      await user.click(createSkillBtn);
+
+      // After clicking, ChatView should be rendered (lazy loaded via Suspense)
+      const chatView = await screen.findByTestId('chat-view');
+      expect(chatView).toBeInTheDocument();
+    });
+  });
+
+  describe('ChatView layout', () => {
+    it('should show collapsed chat strip on desktop when chat is closed', () => {
+      mockUserSkills.mockReturnValue({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      });
+
+      renderPage();
+      expect(screen.getByTestId('collapsed-chat-strip')).toBeInTheDocument();
     });
   });
 

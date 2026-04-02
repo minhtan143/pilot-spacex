@@ -25,6 +25,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { FilePreviewModal } from '@/features/artifacts/components/FilePreviewModal';
 import { cn } from '@/lib/utils';
+import { useWorkspaceStore } from '@/stores';
 import type { ApprovalStore } from '@/stores/ai/ApprovalStore';
 import type { PilotSpaceStore } from '@/stores/ai/PilotSpaceStore';
 import { SessionListStore } from '@/stores/ai/SessionListStore';
@@ -49,6 +50,10 @@ import { WaitingIndicator } from './WaitingIndicator';
 import { useApprovals } from './hooks/useApprovals';
 import { useAttachmentPreview } from './hooks/useAttachmentPreview';
 import { useIntentRehydration } from './hooks/useIntentRehydration';
+import { SkillCreatorCard } from './MessageList/SkillCreatorCard';
+import { userSkillsApi } from '@/services/api/user-skills';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import type { AgentTask } from './types';
 export { isDestructiveAction } from './utils';
 
@@ -68,6 +73,8 @@ interface ChatViewProps {
   emptyStateSlot?: React.ReactNode;
   /** Prompt to auto-send when ChatView mounts with an empty conversation */
   initialPrompt?: string;
+  /** Pre-fill the input field without auto-sending (e.g., from ?prefill= query param) */
+  prefillValue?: string;
   /** Headings from the current note for # section mentions in ChatInput */
   noteHeadings?: HeadingItem[];
   /** Callback when user selects a section via # menu — sets note context to section blocks */
@@ -86,6 +93,7 @@ const ChatViewInternal = observer<ChatViewProps>(
     suggestedPrompts,
     emptyStateSlot,
     initialPrompt,
+    prefillValue,
     noteHeadings,
     onSelectSection,
     className,
@@ -98,6 +106,53 @@ const ChatViewInternal = observer<ChatViewProps>(
     // Trigger to scroll MessageList to bottom after session resume
     const [scrollToBottomTrigger, setScrollToBottomTrigger] = useState(0);
     const prefersReducedMotion = useReducedMotion();
+
+    // Skill card save state — pinned above ChatInput
+    const workspaceStore = useWorkspaceStore();
+    const queryClient = useQueryClient();
+    const [isSkillSaving, setIsSkillSaving] = useState(false);
+    const [isSkillSaved, setIsSkillSaved] = useState(false);
+
+    // Reset saved state when a new skill preview arrives
+    const skillPreviewRef = useRef(store.skillPreview);
+    if (store.skillPreview !== skillPreviewRef.current) {
+      skillPreviewRef.current = store.skillPreview;
+      if (store.skillPreview) {
+        setIsSkillSaved(false);
+      }
+    }
+
+    const handleSkillCardSave = useCallback(
+      async (content: string) => {
+        const slug = workspaceStore.currentWorkspace?.slug;
+        const skillName = store.skillPreview?.skillName;
+        if (!slug || !skillName) return;
+        setIsSkillSaving(true);
+        try {
+          await userSkillsApi.createUserSkill(slug, {
+            skill_name: skillName,
+            skill_content: content,
+          });
+          toast.success(`Skill "${skillName}" saved to your workspace`);
+          setIsSkillSaved(true);
+          void queryClient.invalidateQueries({ queryKey: ['user-skills', slug] });
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Failed to save skill');
+        } finally {
+          setIsSkillSaving(false);
+        }
+      },
+      [store, workspaceStore, queryClient]
+    );
+
+    const handleSkillCardTest = useCallback(
+      (_content: string) => {
+        const skillName = store.skillPreview?.skillName;
+        if (!skillName) return;
+        void store.sendMessage(`\\${skillName} analyze this sample.`);
+      },
+      [store]
+    );
 
     // Attachment preview — opens FilePreviewModal when AttachmentChip is clicked
     const attachmentPreview = useAttachmentPreview();
@@ -125,6 +180,17 @@ const ChatViewInternal = observer<ChatViewProps>(
         void (store as { sendMessage: (c: string) => Promise<void> }).sendMessage(initialPrompt);
       }
     }, [initialPrompt, store]);
+
+    // Pre-fill the input field from prefillValue prop (e.g., ?prefill=/skill-creator).
+    // Re-applies when prefillValue changes to a new truthy string, but won't
+    // overwrite user edits for the same prefill value.
+    const lastPrefillRef = useRef<string | null>(null);
+    useEffect(() => {
+      if (prefillValue && prefillValue !== lastPrefillRef.current) {
+        lastPrefillRef.current = prefillValue;
+        setInputValue(prefillValue);
+      }
+    }, [prefillValue]);
 
     // Track which note context has been loaded to avoid redundant fetches
     const loadedContextRef = useRef<string | null>(null);
@@ -528,6 +594,24 @@ const ChatViewInternal = observer<ChatViewProps>(
 
         {/* T-059: ConfirmAll button — above ChatInput when >= 2 pending intents */}
         <ConfirmAllButton store={store} />
+
+        {/* Skill creator card — pinned above input for easy Save/Test access.
+            Hidden while streaming so it disappears during updates and reappears
+            with fresh content when the new skill_preview event arrives. */}
+        {store.skillPreview && !store.isStreaming && (
+          <div className="border-t border-border bg-background">
+            <SkillCreatorCard
+              skillName={store.skillPreview.skillName}
+              frontmatter={store.skillPreview.frontmatter}
+              content={store.skillPreview.content}
+              isUpdate={store.skillPreview.isUpdate}
+              onSave={handleSkillCardSave}
+              onTest={handleSkillCardTest}
+              isSaving={isSkillSaving}
+              isSaved={isSkillSaved}
+            />
+          </div>
+        )}
 
         {/* Input */}
         <ChatInput

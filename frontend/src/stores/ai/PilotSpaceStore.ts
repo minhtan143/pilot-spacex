@@ -4,6 +4,9 @@
  * @module stores/ai/PilotSpaceStore
  */
 import { makeAutoObservable, runInAction, computed } from 'mobx';
+
+/** Monotonic counter for generating unique skill message IDs within the same millisecond. */
+let _skillMsgCounter = 0;
 import type { AIStore } from './AIStore';
 import type {
   ChatMessage,
@@ -21,6 +24,9 @@ import type {
   AgentQuestion,
   QuestionRequestEvent,
   TaskStatus,
+  SkillPreviewEvent,
+  TestResultEvent,
+  SkillSavedEvent,
 } from './types/events';
 import type { SkillDefinition } from './types/skills';
 import { PilotSpaceStreamHandler } from './PilotSpaceStreamHandler';
@@ -137,6 +143,17 @@ export class PilotSpaceStore {
 
   /** Available skills registry */
   skills: SkillDefinition[] = [];
+
+  // Phase 64: Chat-first skill refinement state
+
+  /** Current skill being created/edited in chat (set by skill_preview event) */
+  skillPreview: SkillPreviewEvent['data'] | null = null;
+
+  /** Latest test result for skill being refined (set by test_result event) */
+  skillTestResult: TestResultEvent['data'] | null = null;
+
+  /** Last saved skill confirmation (set by skill_saved event, triggers save flow) */
+  skillSavedConfirmation: SkillSavedEvent['data'] | null = null;
 
   // Message Pagination State (scroll-up loading)
 
@@ -454,6 +471,58 @@ export class PilotSpaceStore {
       if (this.pendingContentUpdates.length >= 100) this.pendingContentUpdates.shift();
       this.pendingContentUpdates.push(event.data);
     });
+  }
+
+  // Phase 64: Skill Event Handlers
+
+  /**
+   * Handle skill_preview SSE event.
+   * Updates skillPreview observable and appends a system message so
+   * the MessageList can render a SkillPreviewCard inline in ChatView.
+   */
+  handleSkillPreview(event: SkillPreviewEvent): void {
+    this.skillPreview = event.data;
+    this.messages.push({
+      id: `skill_preview_${Date.now()}_${++_skillMsgCounter}`,
+      role: 'system',
+      content: '',
+      timestamp: new Date(),
+      structuredResult: {
+        schemaType: 'skill_preview',
+        data: event.data as unknown as Record<string, unknown>,
+      },
+    });
+  }
+
+  /**
+   * Handle test_result SSE event.
+   * Updates skillTestResult observable and appends a system message so
+   * the MessageList can render a TestResultCard inline in ChatView.
+   */
+  handleTestResult(event: TestResultEvent): void {
+    this.skillTestResult = event.data;
+    this.messages.push({
+      id: `test_result_${Date.now()}_${++_skillMsgCounter}`,
+      role: 'system',
+      content: '',
+      timestamp: new Date(),
+      structuredResult: {
+        schemaType: 'test_result',
+        data: event.data as unknown as Record<string, unknown>,
+      },
+    });
+  }
+
+  /**
+   * Handle skill_saved SSE event.
+   * Updates skillSavedConfirmation and clears in-progress skill preview/test state.
+   * The confirmation message is embedded in the next assistant message_stop.
+   */
+  handleSkillSaved(event: SkillSavedEvent): void {
+    this.skillSavedConfirmation = event.data;
+    // Clear in-progress skill state — the skill is now persisted
+    this.skillPreview = null;
+    this.skillTestResult = null;
   }
 
   consumeContentUpdate(noteId: string): ContentUpdateEvent['data'] | undefined {
