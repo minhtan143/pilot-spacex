@@ -249,15 +249,10 @@ describe('ChatInput — contenteditable div behavior', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it('defers setResumeMenuOpen — onChange is called before timeout fires when /resume typed', () => {
-    // Regression test for: dialog opens but closes immediately when skill /resume is selected.
-    // Root cause: setResumeMenuOpen(true) was called synchronously in handleSkillSelect, letting
-    // SkillMenu's deferred focus-restore (setTimeout 0) fire into the open SessionResumeMenu and
-    // dismiss it. Fix: defer setResumeMenuOpen(true) via setTimeout so it opens AFTER SkillMenu
-    // close events settle.
-    //
-    // This test verifies that typing /resume in the input calls onChange (the contenteditable
-    // input handler fires correctly), which is a precondition for the fix to work.
+  it('calls onChange when /resume is typed in input', () => {
+    // Regression test for: dialog opens but closes immediately when /resume selected.
+    // Root cause: SkillMenu's onOpenChange focus-restore fired into SessionResumeMenu.
+    // Fix: skipFocusOnSkillCloseRef prevents deferred focus when transitioning to resume menu.
     const onChange = vi.fn();
     renderChatInput({ value: '', onChange });
 
@@ -265,7 +260,6 @@ describe('ChatInput — contenteditable div behavior', () => {
     div.textContent = '/resume';
     fireEvent.input(div);
 
-    // onChange should have been called with '/resume' text
     expect(onChange).toHaveBeenCalled();
   });
 });

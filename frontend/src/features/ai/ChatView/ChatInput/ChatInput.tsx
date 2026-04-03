@@ -181,6 +181,11 @@ export const ChatInput = observer<ChatInputProps>(
     const slashQueryStartOffsetRef = useRef<number | null>(null);
     const [slashQuery, setSlashQuery] = useState<string | null>(null);
 
+    // When a skill close transitions to another menu (e.g. /resume),
+    // skip the SkillMenu onOpenChange focus-restore to prevent the
+    // deferred focus from closing the newly-opened menu.
+    const skipFocusOnSkillCloseRef = useRef(false);
+
     // @ entity picker state (D-02)
     const atQueryStartOffsetRef = useRef<number | null>(null);
     const [atQuery, setAtQuery] = useState<string | null>(null);
@@ -324,8 +329,8 @@ export const ChatInput = observer<ChatInputProps>(
         if (skill.name === 'resume') {
           editableRef.current.textContent = '';
           onChange('');
-          // Defer opening until SkillMenu close events (including focus restore) settle
-          setTimeout(() => setResumeMenuOpen(true), 0);
+          skipFocusOnSkillCloseRef.current = true;
+          setResumeMenuOpen(true);
           return;
         }
         // Special handling for /new - start fresh session
@@ -762,7 +767,11 @@ export const ChatInput = observer<ChatInputProps>(
                     if (!open) {
                       setSlashQuery(null);
                       slashQueryStartOffsetRef.current = null;
-                      setTimeout(() => editableRef.current?.focus(), 0);
+                      if (skipFocusOnSkillCloseRef.current) {
+                        skipFocusOnSkillCloseRef.current = false;
+                      } else {
+                        setTimeout(() => editableRef.current?.focus(), 0);
+                      }
                     }
                   }}
                   onSelect={handleSkillSelect}
