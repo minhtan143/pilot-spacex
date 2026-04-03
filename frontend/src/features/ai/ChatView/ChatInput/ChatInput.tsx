@@ -229,14 +229,6 @@ export const ChatInput = observer<ChatInputProps>(
       }
     }, [value, noteHeadings]);
 
-    // Detect /resume trigger
-    useEffect(() => {
-      // Check if value ends with /resume (with optional space before)
-      if (value.match(/(?:^|\s)\/resume$/)) {
-        setResumeMenuOpen(true);
-      }
-    }, [value]);
-
     const handleInput = useCallback(
       (e: React.FormEvent<HTMLDivElement>) => {
         const div = e.currentTarget;
@@ -332,7 +324,8 @@ export const ChatInput = observer<ChatInputProps>(
         if (skill.name === 'resume') {
           editableRef.current.textContent = '';
           onChange('');
-          setResumeMenuOpen(true);
+          // Defer opening until SkillMenu close events (including focus restore) settle
+          setTimeout(() => setResumeMenuOpen(true), 0);
           return;
         }
         // Special handling for /new - start fresh session
@@ -405,18 +398,10 @@ export const ChatInput = observer<ChatInputProps>(
 
     const handleSessionSelect = useCallback(
       (sessionId: string) => {
-        if (!editableRef.current) return;
-        // Remove /resume from input
-        const lastNode = editableRef.current.lastChild;
-        if (lastNode?.nodeType === Node.TEXT_NODE) {
-          lastNode.textContent = (lastNode.textContent ?? '').replace(/\/resume$/, '').trim();
-        }
-        onChange(getSerializedValue(editableRef.current));
         onSelectSession?.(sessionId);
         setResumeMenuOpen(false);
-        editableRef.current.focus();
       },
-      [onChange, onSelectSession]
+      [onSelectSession]
     );
 
     const handleSkillCancel = useCallback(() => {
