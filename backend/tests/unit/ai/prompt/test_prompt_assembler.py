@@ -294,7 +294,10 @@ class TestSkillsLayer:
             user_message="hello",
             user_skills=[
                 {"name": "Python Expert", "description": "Advanced Python development"},
-                {"name": "TDD Coach", "description": "Test-driven development practices"},
+                {
+                    "name": "TDD Coach",
+                    "description": "Test-driven development practices",
+                },
             ],
         )
         result = await assemble_system_prompt(config)
@@ -446,10 +449,9 @@ class TestMentionContextLayer:
         assert "skip" in prompt_lower, "Prompt must instruct agent to skip inaccessible entities"
         assert "continue" in prompt_lower, "Prompt must instruct agent to continue after skipping"
         # Should mention the error condition
-        assert any(
-            term in prompt_lower
-            for term in ["not found", "inaccessible", "error"]
-        ), "Prompt must reference entity-not-found or inaccessible scenario"
+        assert any(term in prompt_lower for term in ["not found", "inaccessible", "error"]), (
+            "Prompt must reference entity-not-found or inaccessible scenario"
+        )
 
     @pytest.mark.asyncio
     async def test_standing_instruction_always_present(self) -> None:
